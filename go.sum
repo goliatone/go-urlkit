@@ -1,0 +1,4 @@
+github.com/dlclark/regexp2 v1.2.0 h1:8sAhBGEM0dRWogWqWyQeIJnxjWO6oIjl8FKqREDsGfk=
+github.com/dlclark/regexp2 v1.2.0/go.mod h1:2pZnwuY/m+8K6iRw6wQdMtk+rH5tNGR1i55kozfMjCc=
+github.com/soongo/path-to-regexp v1.6.4 h1:l7vktVBWkxUPpWesyyEuP4SYQde5E/qD2rOB9CF7y8I=
+github.com/soongo/path-to-regexp v1.6.4/go.mod h1:tXCyQMiXR7WQwF49yZ4QWgtbvqma2NKDt5kOisBJiHQ=
