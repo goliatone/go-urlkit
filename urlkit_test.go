@@ -1585,9 +1585,9 @@ func TestQueryParameterHandlingEdgeCases(t *testing.T) {
 	}
 }
 
-// ExampleInternationalizationPattern demonstrates how to use nested groups
+// ExampleGroup_internationalizationPattern demonstrates how to use nested groups
 // for internationalization with localized routes and content.
-func ExampleInternationalizationPattern() {
+func ExampleGroup_internationalizationPattern() {
 	// Create a route manager for an internationalized website
 	rm := urlkit.NewRouteManager()
 
@@ -1640,9 +1640,9 @@ func ExampleInternationalizationPattern() {
 	// Spanish Products URL: https://mywebsite.com/es/productos/electronics
 }
 
-// ExampleAPIVersioningPattern demonstrates how to use nested groups
+// ExampleGroup_apiVersioningPattern demonstrates how to use nested groups
 // for API versioning with backward compatibility.
-func ExampleAPIVersioningPattern() {
+func ExampleGroup_apiVersioningPattern() {
 	// Create a route manager for a versioned API
 	rm := urlkit.NewRouteManager()
 
@@ -1712,9 +1712,9 @@ func ExampleAPIVersioningPattern() {
 	// Admin Reports URL: https://api.myservice.com/v1/admin/reports/sales/2023-12
 }
 
-// ExampleConfigurationBasedSetup demonstrates how to load nested groups
+// ExampleRouteManager_configurationBasedSetup demonstrates how to load nested groups
 // from JSON configuration for complex application structures.
-func ExampleConfigurationBasedSetup() {
+func ExampleRouteManager_configurationBasedSetup() {
 	// Define a comprehensive configuration with nested groups
 	config := urlkit.Config{
 		Groups: []urlkit.GroupConfig{
@@ -1806,9 +1806,9 @@ func ExampleConfigurationBasedSetup() {
 	// API Users URL: https://api.myapp.com/v1/users/user-123?include=profile
 }
 
-// ExampleValidationWithDotSeparatedPaths demonstrates how to validate
+// ExampleRouteManager_validationWithDotSeparatedPaths demonstrates how to validate
 // nested group configurations using dot-separated path notation.
-func ExampleValidationWithDotSeparatedPaths() {
+func ExampleRouteManager_validationWithDotSeparatedPaths() {
 	// Create a complex nested structure
 	rm := urlkit.NewRouteManager()
 
@@ -1870,4 +1870,1511 @@ func ExampleValidationWithDotSeparatedPaths() {
 	// Output:
 	// ✓ All nested groups and routes are properly configured
 	// Expected validation failure occurred (order may vary): true
+}
+
+// Unit Tests for Template Logic (Task 5.1)
+
+func TestTemplateVariableCollectionAndInheritance(t *testing.T) {
+	// Test template variable collection and inheritance behavior
+	rm := urlkit.NewRouteManager()
+
+	// Create root group with template variables
+	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"status": "/status",
+	})
+
+	root := rm.Group("api")
+	root.SetTemplateVar("region", "us")
+	root.SetTemplateVar("version", "v1")
+
+	// Create child group that overrides some variables and adds new ones
+	child := root.RegisterGroup("mobile", "/mobile", map[string]string{
+		"app": "/app/:id",
+	})
+	child.SetTemplateVar("version", "v2")   // Override parent variable
+	child.SetTemplateVar("platform", "ios") // Add new variable
+
+	// Create grandchild to test deeper inheritance
+	grandchild := child.RegisterGroup("premium", "/premium", map[string]string{
+		"features": "/features",
+	})
+	grandchild.SetTemplateVar("tier", "premium")
+	grandchild.SetTemplateVar("region", "eu") // Override root variable
+
+	// Test variable collection at different levels
+
+	// Root level should only have root variables
+	rootVars := root.CollectTemplateVars()
+	if rootVars["region"] != "us" || rootVars["version"] != "v1" {
+		t.Errorf("Expected root variables region=us, version=v1, got %v", rootVars)
+	}
+	if _, exists := rootVars["platform"]; exists {
+		t.Errorf("Root should not have child variable 'platform'")
+	}
+
+	// Child level should have parent variables plus overrides
+	childVars := child.CollectTemplateVars()
+	expected := map[string]string{
+		"region":   "us",  // From parent
+		"version":  "v2",  // Overridden
+		"platform": "ios", // New
+	}
+	for key, expectedVal := range expected {
+		if childVars[key] != expectedVal {
+			t.Errorf("Expected child variable %s=%s, got %s", key, expectedVal, childVars[key])
+		}
+	}
+
+	// Grandchild level should have full hierarchy with overrides
+	grandchildVars := grandchild.CollectTemplateVars()
+	expectedGrand := map[string]string{
+		"region":   "eu",      // Overridden by grandchild
+		"version":  "v2",      // From child
+		"platform": "ios",     // From child
+		"tier":     "premium", // New from grandchild
+	}
+	for key, expectedVal := range expectedGrand {
+		if grandchildVars[key] != expectedVal {
+			t.Errorf("Expected grandchild variable %s=%s, got %s", key, expectedVal, grandchildVars[key])
+		}
+	}
+}
+
+func TestStringSubstitutionWithVariousPlaceholderFormats(t *testing.T) {
+	// Test string substitution functionality with different placeholder patterns
+
+	testCases := []struct {
+		template string
+		vars     map[string]string
+		expected string
+		name     string
+	}{
+		{
+			name:     "Basic single variable",
+			template: "https://{host}/api",
+			vars:     map[string]string{"host": "example.com"},
+			expected: "https://example.com/api",
+		},
+		{
+			name:     "Multiple variables",
+			template: "https://{host}/{version}/{endpoint}",
+			vars:     map[string]string{"host": "api.example.com", "version": "v1", "endpoint": "users"},
+			expected: "https://api.example.com/v1/users",
+		},
+		{
+			name:     "Variable with underscores",
+			template: "{base_url}/{api_version}",
+			vars:     map[string]string{"base_url": "https://api.com", "api_version": "v2"},
+			expected: "https://api.com/v2",
+		},
+		{
+			name:     "Variable with numbers",
+			template: "{host1}/{path2}",
+			vars:     map[string]string{"host1": "server1.com", "path2": "data"},
+			expected: "server1.com/data",
+		},
+		{
+			name:     "Missing variable - placeholder remains",
+			template: "https://{host}/{missing_var}/api",
+			vars:     map[string]string{"host": "example.com"},
+			expected: "https://example.com/{missing_var}/api",
+		},
+		{
+			name:     "Empty template",
+			template: "",
+			vars:     map[string]string{"host": "example.com"},
+			expected: "",
+		},
+		{
+			name:     "No variables in template",
+			template: "https://static.example.com/api",
+			vars:     map[string]string{"host": "example.com"},
+			expected: "https://static.example.com/api",
+		},
+		{
+			name:     "Same variable used multiple times",
+			template: "{proto}://{host}/{proto}/api",
+			vars:     map[string]string{"proto": "https", "host": "example.com"},
+			expected: "https://example.com/https/api",
+		},
+		{
+			name:     "Variables with special characters",
+			template: "{base_url}{locale}{route_path}",
+			vars:     map[string]string{"base_url": "https://site.com", "locale": "/en", "route_path": "/about-us"},
+			expected: "https://site.com/en/about-us",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := urlkit.SubstituteTemplate(tc.template, tc.vars)
+			if result != tc.expected {
+				t.Errorf("Expected %q, got %q", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestTemplateOwnerDiscoveryLogic(t *testing.T) {
+	// Test template owner discovery in group hierarchy
+	rm := urlkit.NewRouteManager()
+
+	// Create hierarchy: root -> child -> grandchild
+	rm.RegisterGroup("root", "https://example.com", map[string]string{
+		"home": "/",
+	})
+
+	root := rm.Group("root")
+	child := root.RegisterGroup("child", "/child", map[string]string{
+		"page": "/page",
+	})
+	grandchild := child.RegisterGroup("grandchild", "/grandchild", map[string]string{
+		"item": "/item/:id",
+	})
+
+	// Test 1: No templates set - should return nil
+	owner := grandchild.FindTemplateOwner()
+	if owner != nil {
+		t.Error("Expected nil when no templates are set")
+	}
+
+	// Test 2: Template set at root level
+	root.SetURLTemplate("{base_url}{route_path}")
+	owner = grandchild.FindTemplateOwner()
+	if owner != root {
+		t.Error("Expected root group to be template owner")
+	}
+
+	// Test 3: Template set at child level - should override root
+	child.SetURLTemplate("{base_url}/mobile{route_path}")
+	owner = grandchild.FindTemplateOwner()
+	if owner != child {
+		t.Error("Expected child group to be template owner (overrides root)")
+	}
+
+	// Test 4: Template set at grandchild level - should be most specific
+	grandchild.SetURLTemplate("{base_url}/api/v2{route_path}")
+	owner = grandchild.FindTemplateOwner()
+	if owner != grandchild {
+		t.Error("Expected grandchild group to be template owner (most specific)")
+	}
+
+	// Test 5: Remove grandchild template - should fall back to child
+	grandchild.SetURLTemplate("")
+	owner = grandchild.FindTemplateOwner()
+	if owner != child {
+		t.Error("Expected child group to be template owner after grandchild template removed")
+	}
+
+	// Test 6: Template owner discovery from child level
+	owner = child.FindTemplateOwner()
+	if owner != child {
+		t.Error("Expected child to find itself as template owner")
+	}
+
+	// Test 7: Remove child template - child should find root as owner
+	child.SetURLTemplate("")
+	owner = child.FindTemplateOwner()
+	if owner != root {
+		t.Error("Expected child to find root as template owner")
+	}
+}
+
+func TestNewGroupMethods(t *testing.T) {
+	// Test new Group methods: SetURLTemplate, SetTemplateVar, GetTemplateVar, AddRoutes
+
+	// Create a fresh route manager to avoid interference from other tests
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("test", "https://example.com", map[string]string{
+		"users": "/users/:id",
+	})
+	group := rm.Group("test")
+
+	// Test SetURLTemplate and GetURLTemplate (assuming we can access it)
+	template := "{base_url}/{locale}{route_path}"
+	group.SetURLTemplate(template)
+
+	// Test SetTemplateVar and GetTemplateVar
+	group.SetTemplateVar("locale", "en")
+	group.SetTemplateVar("region", "us")
+
+	// Test GetTemplateVar for existing variable
+	if value, exists := group.GetTemplateVar("locale"); !exists || value != "en" {
+		t.Errorf("Expected locale=en, got value=%s, exists=%v", value, exists)
+	}
+
+	if value, exists := group.GetTemplateVar("region"); !exists || value != "us" {
+		t.Errorf("Expected region=us, got value=%s, exists=%v", value, exists)
+	}
+
+	// Test GetTemplateVar for non-existing variable
+	if value, exists := group.GetTemplateVar("nonexistent"); exists {
+		t.Errorf("Expected nonexistent variable to not exist, got value=%s", value)
+	}
+
+	// Test variable override
+	group.SetTemplateVar("locale", "es")
+	if value, exists := group.GetTemplateVar("locale"); !exists || value != "es" {
+		t.Errorf("Expected overridden locale=es, got value=%s, exists=%v", value, exists)
+	}
+
+	// Test AddRoutes method
+	newRoutes := map[string]string{
+		"posts":    "/posts/:id",
+		"comments": "/posts/:postId/comments/:commentId",
+	}
+	group.AddRoutes(newRoutes)
+
+	// Test that new routes were added and are functional
+	postRoute, err := group.Route("posts")
+	if err != nil {
+		t.Fatalf("Expected posts route to be added: %v", err)
+	}
+	if postRoute != "/posts/:id" {
+		t.Errorf("Expected posts route to be '/posts/:id', got %s", postRoute)
+	}
+
+	commentRoute, err := group.Route("comments")
+	if err != nil {
+		t.Fatalf("Expected comments route to be added: %v", err)
+	}
+	if commentRoute != "/posts/:postId/comments/:commentId" {
+		t.Errorf("Expected comments route pattern, got %s", commentRoute)
+	}
+
+	// Test that original routes still work
+	userRoute, err := group.Route("users")
+	if err != nil {
+		t.Fatalf("Expected original users route to still work: %v", err)
+	}
+	if userRoute != "/users/:id" {
+		t.Errorf("Expected users route to be '/users/:id', got %s", userRoute)
+	}
+
+	// Clear any template and variables that might be set to test non-template mode
+	group.SetURLTemplate("")
+	// Reset template vars by creating a new empty map (no clear method exists)
+	group.SetTemplateVar("locale", "")
+	group.SetTemplateVar("region", "")
+
+	// Test URL building with added routes
+	postURL, err := group.Builder("posts").
+		WithParam("id", "123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build URL with added route: %v", err)
+	}
+	expected := "https://example.com/posts/123"
+	if postURL != expected {
+		t.Errorf("Expected %q, got %q", expected, postURL)
+	}
+}
+
+// Integration Tests for Template Logic (Task 5.2)
+
+func TestFullURLBuildingWithTemplatesProgrammaticAPI(t *testing.T) {
+	// Test full URL building with templates using programmatic API
+	rm := urlkit.NewRouteManager()
+
+	// Create a multi-service setup with templates
+	rm.RegisterGroup("frontend", "https://myapp.com", map[string]string{
+		"home":  "/",
+		"about": "/about",
+	})
+
+	frontend := rm.Group("frontend")
+	frontend.SetURLTemplate("{base_url}{locale}{route_path}")
+	frontend.SetTemplateVar("locale", "/en")
+
+	// Create API service with different template
+	rm.RegisterGroup("api", "https://api.myapp.com", map[string]string{
+		"status": "/status",
+		"health": "/health",
+	})
+
+	api := rm.Group("api")
+	api.SetURLTemplate("{base_url}/v{version}{route_path}")
+	api.SetTemplateVar("version", "1")
+
+	// Create nested groups with variable overrides
+	v2 := api.RegisterGroup("v2", "/v2", map[string]string{
+		"users": "/users/:id",
+		"posts": "/posts",
+	})
+	v2.SetTemplateVar("version", "2") // Override parent variable
+
+	// Test frontend URL building with template
+	aboutURL, err := frontend.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build frontend about URL: %v", err)
+	}
+	expected := "https://myapp.com/en/about/"
+	if aboutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, aboutURL)
+	}
+
+	// Test API URL building with template and version
+	statusURL, err := api.Builder("status").Build()
+	if err != nil {
+		t.Fatalf("Failed to build API status URL: %v", err)
+	}
+	expected = "https://api.myapp.com/v1/status/"
+	if statusURL != expected {
+		t.Errorf("Expected %q, got %q", expected, statusURL)
+	}
+
+	// Test nested group with variable override
+	usersURL, err := v2.Builder("users").
+		WithParam("id", "123").
+		WithQuery("include", "profile").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build v2 users URL: %v", err)
+	}
+	expected = "https://api.myapp.com/v2/users/123/?include=profile"
+	if usersURL != expected {
+		t.Errorf("Expected %q, got %q", expected, usersURL)
+	}
+
+	// Test template variable changes
+	frontend.SetTemplateVar("locale", "/es")
+	aboutEsURL, err := frontend.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build Spanish about URL: %v", err)
+	}
+	expected = "https://myapp.com/es/about/"
+	if aboutEsURL != expected {
+		t.Errorf("Expected %q, got %q", expected, aboutEsURL)
+	}
+}
+
+func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
+	// Test JSON configuration loading with template fields
+	config := urlkit.Config{
+		Groups: []urlkit.GroupConfig{
+			{
+				Name:        "frontend",
+				BaseURL:     "https://example.com",
+				URLTemplate: "{base_url}{locale}{route_path}",
+				TemplateVars: map[string]string{
+					"locale": "/en",
+					"region": "us",
+				},
+				Paths: map[string]string{
+					"home":    "/",
+					"about":   "/about",
+					"contact": "/contact",
+				},
+				Groups: []urlkit.GroupConfig{
+					{
+						Name: "help",
+						Path: "/help",
+						TemplateVars: map[string]string{
+							"locale":  "/en", // Same as parent
+							"section": "support",
+						},
+						Paths: map[string]string{
+							"faq":     "/faq",
+							"support": "/support/:ticket?",
+						},
+					},
+					{
+						Name: "es",
+						Path: "/es",
+						TemplateVars: map[string]string{
+							"locale": "/es", // Override parent
+							"region": "es",  // Override parent
+						},
+						Paths: map[string]string{
+							"inicio":   "/inicio",
+							"contacto": "/contacto",
+						},
+					},
+				},
+			},
+			{
+				Name:        "api",
+				BaseURL:     "https://api.example.com",
+				URLTemplate: "{base_url}{api_version}{route_path}",
+				TemplateVars: map[string]string{
+					"api_version": "/v1",
+				},
+				Paths: map[string]string{
+					"status": "/status",
+				},
+				Groups: []urlkit.GroupConfig{
+					{
+						Name: "v2",
+						Path: "/v2",
+						TemplateVars: map[string]string{
+							"api_version": "/v2", // Override parent
+						},
+						Paths: map[string]string{
+							"users": "/users/:id",
+							"posts": "/posts",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	manager := urlkit.NewRouteManagerFromConfig(config)
+
+	// Test root group template URL building
+	homeURL, err := manager.Group("frontend").Builder("home").Build()
+	if err != nil {
+		t.Fatalf("Failed to build home URL from config: %v", err)
+	}
+	expected := "https://example.com/en/"
+	if homeURL != expected {
+		t.Errorf("Expected %q, got %q", expected, homeURL)
+	}
+
+	// Test nested group with inherited variables
+	faqURL, err := manager.Group("frontend").Group("help").Builder("faq").Build()
+	if err != nil {
+		t.Fatalf("Failed to build FAQ URL from config: %v", err)
+	}
+	expected = "https://example.com/en/faq/"
+	if faqURL != expected {
+		t.Errorf("Expected %q, got %q", expected, faqURL)
+	}
+
+	// Test nested group with overridden variables
+	inicioURL, err := manager.Group("frontend").Group("es").Builder("inicio").Build()
+	if err != nil {
+		t.Fatalf("Failed to build Spanish inicio URL from config: %v", err)
+	}
+	expected = "https://example.com/es/inicio/"
+	if inicioURL != expected {
+		t.Errorf("Expected %q, got %q", expected, inicioURL)
+	}
+
+	// Test API with template
+	statusURL, err := manager.Group("api").Builder("status").Build()
+	if err != nil {
+		t.Fatalf("Failed to build API status URL from config: %v", err)
+	}
+	expected = "https://api.example.com/v1/status/"
+	if statusURL != expected {
+		t.Errorf("Expected %q, got %q", expected, statusURL)
+	}
+
+	// Test API v2 with overridden version
+	usersURL, err := manager.Group("api").Group("v2").Builder("users").
+		WithParam("id", "123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build v2 users URL from config: %v", err)
+	}
+	expected = "https://api.example.com/v2/users/123/"
+	if usersURL != expected {
+		t.Errorf("Expected %q, got %q", expected, usersURL)
+	}
+}
+
+func TestComplexNestedScenariosFromFeatureSpecification(t *testing.T) {
+	// Test complex nested scenarios based on the feature specification
+
+	// Scenario: Multi-language e-commerce site with regions and API versioning
+	rm := urlkit.NewRouteManager()
+
+	// Main site with regional templates
+	rm.RegisterGroup("site", "https://shop.example.com", map[string]string{
+		"home": "/",
+	})
+
+	site := rm.Group("site")
+	site.SetURLTemplate("{base_url}{region_path}{locale_path}{route_path}")
+	site.SetTemplateVar("region_path", "")
+	site.SetTemplateVar("locale_path", "")
+
+	// US region
+	us := site.RegisterGroup("us", "/us", map[string]string{
+		"products": "/products/:category",
+		"cart":     "/cart",
+	})
+	us.SetTemplateVar("region_path", "/us")
+
+	// US English
+	usEn := us.RegisterGroup("en", "/en", map[string]string{
+		"checkout": "/checkout/:step",
+		"account":  "/account",
+	})
+	usEn.SetTemplateVar("locale_path", "/en")
+
+	// US Spanish
+	usEs := us.RegisterGroup("es", "/es", map[string]string{
+		"checkout": "/pago/:step",
+		"account":  "/cuenta",
+	})
+	usEs.SetTemplateVar("locale_path", "/es")
+
+	// EU region with different structure
+	eu := site.RegisterGroup("eu", "", map[string]string{
+		"products": "/products/:category",
+	})
+	eu.SetURLTemplate("{base_url}{locale_path}.{region_code}{route_path}")
+	eu.SetTemplateVar("region_code", "eu")
+	eu.SetTemplateVar("locale_path", "/en")
+
+	// EU locales
+	euDe := eu.RegisterGroup("de", "", map[string]string{
+		"checkout": "/kasse/:step",
+		"account":  "/konto",
+	})
+	euDe.SetTemplateVar("locale_path", "/de")
+
+	// Test US English checkout
+	usEnCheckoutURL, err := usEn.Builder("checkout").
+		WithParam("step", "payment").
+		WithQuery("method", "card").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build US English checkout URL: %v", err)
+	}
+	expected := "https://shop.example.com/us/en/checkout/payment/?method=card"
+	if usEnCheckoutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, usEnCheckoutURL)
+	}
+
+	// Test US Spanish checkout (different route)
+	usEsCheckoutURL, err := usEs.Builder("checkout").
+		WithParam("step", "payment").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build US Spanish checkout URL: %v", err)
+	}
+	expected = "https://shop.example.com/us/es/pago/payment/"
+	if usEsCheckoutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, usEsCheckoutURL)
+	}
+
+	// Test EU German with different template structure
+	euDeCheckoutURL, err := euDe.Builder("checkout").
+		WithParam("step", "payment").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build EU German checkout URL: %v", err)
+	}
+	expected = "https://shop.example.com/de.eu/kasse/payment/"
+	if euDeCheckoutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, euDeCheckoutURL)
+	}
+
+	// Test EU products (inherits parent template but no locale override)
+	euProductsURL, err := eu.Builder("products").
+		WithParam("category", "electronics").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build EU products URL: %v", err)
+	}
+	expected = "https://shop.example.com/en.eu/products/electronics/"
+	if euProductsURL != expected {
+		t.Errorf("Expected %q, got %q", expected, euProductsURL)
+	}
+}
+
+func TestVariableOverrideBehavior(t *testing.T) {
+	// Test variable override behavior (child overrides parent)
+	rm := urlkit.NewRouteManager()
+
+	rm.RegisterGroup("service", "https://api.example.com", map[string]string{
+		"status": "/status",
+	})
+
+	service := rm.Group("service")
+	service.SetURLTemplate("{protocol}://{host}/{env}/{version}{route_path}")
+	service.SetTemplateVar("protocol", "https")
+	service.SetTemplateVar("host", "api.example.com")
+	service.SetTemplateVar("env", "prod")
+	service.SetTemplateVar("version", "v1")
+
+	// Child overrides some variables
+	staging := service.RegisterGroup("staging", "/staging", map[string]string{
+		"health":  "/health",
+		"metrics": "/metrics",
+	})
+	staging.SetTemplateVar("env", "staging")      // Override parent
+	staging.SetTemplateVar("host", "staging.api") // Override parent
+	staging.SetTemplateVar("debug", "true")       // New variable
+
+	// Grandchild overrides more variables
+	v2 := staging.RegisterGroup("v2", "/v2", map[string]string{
+		"users": "/users/:id",
+		"posts": "/posts",
+	})
+	v2.SetTemplateVar("version", "v2")           // Override grandparent
+	v2.SetTemplateVar("protocol", "http")        // Override grandparent
+	v2.SetTemplateVar("experimental", "enabled") // New variable
+
+	// Test parent level - should use all original variables
+	parentVars := service.CollectTemplateVars()
+	expectedParent := map[string]string{
+		"protocol": "https",
+		"host":     "api.example.com",
+		"env":      "prod",
+		"version":  "v1",
+	}
+	for key, expectedVal := range expectedParent {
+		if parentVars[key] != expectedVal {
+			t.Errorf("Parent: Expected %s=%s, got %s", key, expectedVal, parentVars[key])
+		}
+	}
+
+	// Test child level - should have parent vars plus overrides
+	childVars := staging.CollectTemplateVars()
+	expectedChild := map[string]string{
+		"protocol": "https",       // From parent
+		"host":     "staging.api", // Overridden
+		"env":      "staging",     // Overridden
+		"version":  "v1",          // From parent
+		"debug":    "true",        // New
+	}
+	for key, expectedVal := range expectedChild {
+		if childVars[key] != expectedVal {
+			t.Errorf("Child: Expected %s=%s, got %s", key, expectedVal, childVars[key])
+		}
+	}
+
+	// Test grandchild level - should have full hierarchy with all overrides
+	grandchildVars := v2.CollectTemplateVars()
+	expectedGrandchild := map[string]string{
+		"protocol":     "http",        // Overridden by grandchild
+		"host":         "staging.api", // From child
+		"env":          "staging",     // From child
+		"version":      "v2",          // Overridden by grandchild
+		"debug":        "true",        // From child
+		"experimental": "enabled",     // New from grandchild
+	}
+	for key, expectedVal := range expectedGrandchild {
+		if grandchildVars[key] != expectedVal {
+			t.Errorf("Grandchild: Expected %s=%s, got %s", key, expectedVal, grandchildVars[key])
+		}
+	}
+
+	// Test URL building at each level
+
+	// Parent URL
+	parentURL, err := service.Builder("status").Build()
+	if err != nil {
+		t.Fatalf("Failed to build parent URL: %v", err)
+	}
+	expected := "https://api.example.com/prod/v1/status/"
+	if parentURL != expected {
+		t.Errorf("Parent URL: Expected %q, got %q", expected, parentURL)
+	}
+
+	// Child URL with overrides
+	childURL, err := staging.Builder("health").Build()
+	if err != nil {
+		t.Fatalf("Failed to build child URL: %v", err)
+	}
+	expected = "https://staging.api/staging/v1/health/"
+	if childURL != expected {
+		t.Errorf("Child URL: Expected %q, got %q", expected, childURL)
+	}
+
+	// Grandchild URL with multiple overrides
+	grandchildURL, err := v2.Builder("users").
+		WithParam("id", "123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build grandchild URL: %v", err)
+	}
+	expected = "http://staging.api/staging/v2/users/123/"
+	if grandchildURL != expected {
+		t.Errorf("Grandchild URL: Expected %q, got %q", expected, grandchildURL)
+	}
+}
+
+// Backward Compatibility Tests (Task 5.3)
+
+func TestExistingFunctionalityWorksUnchanged(t *testing.T) {
+	// Test that existing functionality works exactly as before when no templates are used
+
+	// Test 1: Basic RouteManager functionality without templates
+	rm := urlkit.NewRouteManager()
+
+	// Register groups the old way - no templates
+	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"users":  "/users/:id",
+		"posts":  "/posts/:id",
+		"status": "/status",
+		"health": "/health",
+	})
+
+	rm.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"home":    "/",
+		"about":   "/about",
+		"contact": "/contact/:type?",
+	})
+
+	// Test basic URL building - should work exactly as before
+	userURL, err := rm.Group("api").Builder("users").
+		WithParam("id", "123").
+		WithQuery("include", "profile").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build user URL: %v", err)
+	}
+	expected := "https://api.example.com/users/123?include=profile"
+	if userURL != expected {
+		t.Errorf("Expected %q, got %q", expected, userURL)
+	}
+
+	// Test nested groups without templates
+	api := rm.Group("api")
+	v1 := api.RegisterGroup("v1", "/v1", map[string]string{
+		"analytics": "/analytics/:metric",
+		"reports":   "/reports",
+	})
+
+	v2 := api.RegisterGroup("v2", "/v2", map[string]string{
+		"analytics":  "/analytics/:metric/:timeframe",
+		"dashboards": "/dashboards/:id",
+	})
+
+	// Test nested URL building - should work exactly as before
+	v1AnalyticsURL, err := v1.Builder("analytics").
+		WithParam("metric", "pageviews").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build v1 analytics URL: %v", err)
+	}
+	expected = "https://api.example.com/v1/analytics/pageviews"
+	if v1AnalyticsURL != expected {
+		t.Errorf("Expected %q, got %q", expected, v1AnalyticsURL)
+	}
+
+	v2DashboardURL, err := v2.Builder("dashboards").
+		WithParam("id", "main").
+		WithQuery("refresh", "30").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build v2 dashboard URL: %v", err)
+	}
+	expected = "https://api.example.com/v2/dashboards/main?refresh=30"
+	if v2DashboardURL != expected {
+		t.Errorf("Expected %q, got %q", expected, v2DashboardURL)
+	}
+
+	// Test validation functionality - should work exactly as before
+	validationConfig := map[string][]string{
+		"api":      {"users", "posts", "status"},
+		"frontend": {"home", "about"},
+		"api.v1":   {"analytics", "reports"},
+		"api.v2":   {"analytics", "dashboards"},
+	}
+
+	err = rm.Validate(validationConfig)
+	if err != nil {
+		t.Errorf("Validation should pass for existing routes: %v", err)
+	}
+
+	// Test validation failure - should work exactly as before
+	invalidConfig := map[string][]string{
+		"api": {"users", "posts", "missing_route"},
+	}
+
+	err = rm.Validate(invalidConfig)
+	if err == nil {
+		t.Error("Validation should fail for missing routes")
+	}
+
+	// Test MustValidate functionality
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("MustValidate should panic for invalid config")
+		}
+	}()
+
+	rm.MustValidate(invalidConfig)
+}
+
+func TestEmptyMissingTemplatesFallbackToConcatenation(t *testing.T) {
+	// Test that groups with empty or missing templates fall back to path concatenation
+
+	rm := urlkit.NewRouteManager()
+
+	// Create groups without templates (should use concatenation)
+	rm.RegisterGroup("legacy", "https://legacy.example.com", map[string]string{
+		"users": "/users/:id",
+		"posts": "/posts/:id",
+	})
+
+	legacy := rm.Group("legacy")
+
+	// Verify no template is set
+	templateOwner := legacy.FindTemplateOwner()
+	if templateOwner != nil {
+		t.Error("Expected no template owner for legacy group")
+	}
+
+	// Create nested group without template
+	api := legacy.RegisterGroup("api", "/api", map[string]string{
+		"status": "/status",
+		"health": "/health/:check?",
+	})
+
+	// Test URL building falls back to concatenation
+	userURL, err := legacy.Builder("users").
+		WithParam("id", "456").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build user URL: %v", err)
+	}
+	expected := "https://legacy.example.com/users/456"
+	if userURL != expected {
+		t.Errorf("Expected %q, got %q", expected, userURL)
+	}
+
+	// Test nested group URL building falls back to concatenation
+	statusURL, err := api.Builder("status").Build()
+	if err != nil {
+		t.Fatalf("Failed to build status URL: %v", err)
+	}
+	expected = "https://legacy.example.com/api/status"
+	if statusURL != expected {
+		t.Errorf("Expected %q, got %q", expected, statusURL)
+	}
+
+	// Now create a group with template but then clear it
+	rm.RegisterGroup("templated", "https://templated.example.com", map[string]string{
+		"home":  "/",
+		"about": "/about",
+	})
+
+	templated := rm.Group("templated")
+	templated.SetURLTemplate("{base_url}/app{route_path}")
+	templated.SetTemplateVar("prefix", "/app")
+
+	// Verify template is set
+	templateOwner = templated.FindTemplateOwner()
+	if templateOwner == nil {
+		t.Error("Expected template owner to be set")
+	}
+
+	// Clear the template
+	templated.SetURLTemplate("")
+
+	// Verify template is cleared
+	templateOwner = templated.FindTemplateOwner()
+	if templateOwner != nil {
+		t.Error("Expected no template owner after clearing template")
+	}
+
+	// Test URL building falls back to concatenation after template cleared
+	aboutURL, err := templated.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build about URL: %v", err)
+	}
+	expected = "https://templated.example.com/about"
+	if aboutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, aboutURL)
+	}
+
+	// Test mixed scenario: parent has no template, child has template
+	mixed := legacy.RegisterGroup("mixed", "/mixed", map[string]string{
+		"data": "/data/:id",
+	})
+	mixed.SetURLTemplate("{base_url}/special{route_path}")
+
+	// Child should use its own template
+	templateOwner = mixed.FindTemplateOwner()
+	if templateOwner != mixed {
+		t.Error("Expected mixed group to be its own template owner")
+	}
+
+	dataURL, err := mixed.Builder("data").
+		WithParam("id", "123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build data URL: %v", err)
+	}
+	expected = "https://legacy.example.com/special/data/123/"
+	if dataURL != expected {
+		t.Errorf("Expected %q, got %q", expected, dataURL)
+	}
+}
+
+func TestExistingJSONConfigsContinueToWork(t *testing.T) {
+	// Test that existing JSON configurations without template fields continue to work
+
+	// Traditional config without template fields
+	legacyConfig := urlkit.Config{
+		Groups: []urlkit.GroupConfig{
+			{
+				Name:    "api",
+				BaseURL: "https://api.legacy.com",
+				Paths: map[string]string{
+					"users":    "/users/:id",
+					"posts":    "/posts/:id",
+					"comments": "/posts/:postId/comments/:commentId?",
+				},
+				Groups: []urlkit.GroupConfig{
+					{
+						Name: "v1",
+						Path: "/v1",
+						Paths: map[string]string{
+							"search":    "/search",
+							"analytics": "/analytics/:type",
+						},
+					},
+					{
+						Name: "v2",
+						Path: "/v2",
+						Paths: map[string]string{
+							"search":      "/search/:query",
+							"suggestions": "/suggestions",
+						},
+						Groups: []urlkit.GroupConfig{
+							{
+								Name: "beta",
+								Path: "/beta",
+								Paths: map[string]string{
+									"features": "/features/:feature",
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name:    "frontend",
+				BaseURL: "https://www.legacy.com",
+				Paths: map[string]string{
+					"home":     "/",
+					"about":    "/about",
+					"contact":  "/contact",
+					"products": "/products/:category/:id?",
+				},
+				Groups: []urlkit.GroupConfig{
+					{
+						Name: "blog",
+						Path: "/blog",
+						Paths: map[string]string{
+							"posts":    "/posts/:slug",
+							"archives": "/archives/:year/:month?",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	manager := urlkit.NewRouteManagerFromConfig(legacyConfig)
+
+	// Test root group functionality
+	userURL, err := manager.Group("api").Builder("users").
+		WithParam("id", "123").
+		WithQuery("include", "profile").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build user URL from legacy config: %v", err)
+	}
+	expected := "https://api.legacy.com/users/123?include=profile"
+	if userURL != expected {
+		t.Errorf("Expected %q, got %q", expected, userURL)
+	}
+
+	// Test nested groups
+	searchV1URL, err := manager.Group("api").Group("v1").Builder("search").
+		WithQuery("q", "golang").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build v1 search URL from legacy config: %v", err)
+	}
+	expected = "https://api.legacy.com/v1/search?q=golang"
+	if searchV1URL != expected {
+		t.Errorf("Expected %q, got %q", expected, searchV1URL)
+	}
+
+	// Test deeply nested groups
+	betaFeaturesURL, err := manager.Group("api").Group("v2").Group("beta").Builder("features").
+		WithParam("feature", "ai-search").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build beta features URL from legacy config: %v", err)
+	}
+	expected = "https://api.legacy.com/v2/beta/features/ai-search"
+	if betaFeaturesURL != expected {
+		t.Errorf("Expected %q, got %q", expected, betaFeaturesURL)
+	}
+
+	// Test different base URL group
+	productURL, err := manager.Group("frontend").Builder("products").
+		WithParam("category", "electronics").
+		WithParam("id", "laptop-123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build product URL from legacy config: %v", err)
+	}
+	expected = "https://www.legacy.com/products/electronics/laptop-123"
+	if productURL != expected {
+		t.Errorf("Expected %q, got %q", expected, productURL)
+	}
+
+	// Test blog nested group
+	blogPostURL, err := manager.Group("frontend").Group("blog").Builder("posts").
+		WithParam("slug", "introducing-new-features").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build blog post URL from legacy config: %v", err)
+	}
+	expected = "https://www.legacy.com/blog/posts/introducing-new-features"
+	if blogPostURL != expected {
+		t.Errorf("Expected %q, got %q", expected, blogPostURL)
+	}
+
+	// Test validation works with legacy config
+	validationRules := map[string][]string{
+		"api":           {"users", "posts", "comments"},
+		"api.v1":        {"search", "analytics"},
+		"api.v2":        {"search", "suggestions"},
+		"api.v2.beta":   {"features"},
+		"frontend":      {"home", "about", "contact", "products"},
+		"frontend.blog": {"posts", "archives"},
+	}
+
+	err = manager.Validate(validationRules)
+	if err != nil {
+		t.Errorf("Validation should pass for legacy config: %v", err)
+	}
+
+	// Test that legacy config groups have no templates
+	apiGroup := manager.Group("api")
+	if templateOwner := apiGroup.FindTemplateOwner(); templateOwner != nil {
+		t.Error("Legacy config groups should not have templates")
+	}
+
+	frontendGroup := manager.Group("frontend")
+	if templateOwner := frontendGroup.FindTemplateOwner(); templateOwner != nil {
+		t.Error("Legacy config groups should not have templates")
+	}
+
+	// Test that Route and MustRoute methods work
+	userRoute, err := apiGroup.Route("users")
+	if err != nil {
+		t.Fatalf("Failed to get user route: %v", err)
+	}
+	expected = "/users/:id"
+	if userRoute != expected {
+		t.Errorf("Expected route %q, got %q", expected, userRoute)
+	}
+
+	homeRoute := frontendGroup.MustRoute("home")
+	expected = "/"
+	if homeRoute != expected {
+		t.Errorf("Expected route %q, got %q", expected, homeRoute)
+	}
+
+	// Test AddRoutes method works on legacy groups
+	apiGroup.AddRoutes(map[string]string{
+		"webhooks": "/webhooks/:event",
+		"status":   "/status",
+	})
+
+	webhookURL, err := apiGroup.Builder("webhooks").
+		WithParam("event", "user.created").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build webhook URL: %v", err)
+	}
+	expected = "https://api.legacy.com/webhooks/user.created"
+	if webhookURL != expected {
+		t.Errorf("Expected %q, got %q", expected, webhookURL)
+	}
+}
+
+// Example Scenarios Testing (Task 5.4)
+
+func TestI18nURLStructureFromSpecification(t *testing.T) {
+	// Test the exact i18n URL structure example from the feature specification
+
+	// Create the configuration as shown in the specification
+	config := urlkit.Config{
+		Groups: []urlkit.GroupConfig{
+			{
+				Name:        "frontend",
+				BaseURL:     "https://www.example.com",
+				URLTemplate: "{protocol}://{host}/{locale}/{section}{route_path}",
+				TemplateVars: map[string]string{
+					"protocol": "https",
+					"host":     "www.example.com",
+				},
+				Paths: map[string]string{},
+				Groups: []urlkit.GroupConfig{
+					{
+						Name: "en",
+						TemplateVars: map[string]string{
+							"locale": "en-US",
+						},
+						Groups: []urlkit.GroupConfig{
+							{
+								Name: "company",
+								TemplateVars: map[string]string{
+									"section": "about-us",
+								},
+								Paths: map[string]string{
+									"about": "/about",
+									"team":  "/team",
+								},
+							},
+							{
+								Name: "products",
+								TemplateVars: map[string]string{
+									"section": "products",
+								},
+								Paths: map[string]string{
+									"catalog": "/catalog",
+									"details": "/details/:id",
+								},
+							},
+						},
+					},
+					{
+						Name: "es",
+						TemplateVars: map[string]string{
+							"locale": "es-ES",
+						},
+						Groups: []urlkit.GroupConfig{
+							{
+								Name: "company",
+								TemplateVars: map[string]string{
+									"section": "nuestra-empresa",
+								},
+								Paths: map[string]string{
+									"about": "/acerca-de",
+									"team":  "/equipo",
+								},
+							},
+							{
+								Name: "products",
+								TemplateVars: map[string]string{
+									"section": "productos",
+								},
+								Paths: map[string]string{
+									"catalog": "/catalogo",
+									"details": "/detalles/:id",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	manager := urlkit.NewRouteManagerFromConfig(config)
+
+	// Test English company about page
+	enAboutURL, err := manager.Group("frontend").Group("en").Group("company").Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build English about URL: %v", err)
+	}
+	expected := "https://www.example.com/en-US/about-us/about/"
+	if enAboutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, enAboutURL)
+	}
+
+	// Test Spanish company about page (as shown in specification)
+	esAboutURL, err := manager.Group("frontend").Group("es").Group("company").Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build Spanish about URL: %v", err)
+	}
+	expected = "https://www.example.com/es-ES/nuestra-empresa/acerca-de/"
+	if esAboutURL != expected {
+		t.Errorf("Expected %q, got %q", expected, esAboutURL)
+	}
+
+	// Test English products with parameters
+	enProductURL, err := manager.Group("frontend").Group("en").Group("products").Builder("details").
+		WithParam("id", "laptop-123").
+		WithQuery("variant", "pro").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build English product URL: %v", err)
+	}
+	expected = "https://www.example.com/en-US/products/details/laptop-123/?variant=pro"
+	if enProductURL != expected {
+		t.Errorf("Expected %q, got %q", expected, enProductURL)
+	}
+
+	// Test Spanish products
+	esProductURL, err := manager.Group("frontend").Group("es").Group("products").Builder("catalog").Build()
+	if err != nil {
+		t.Fatalf("Failed to build Spanish catalog URL: %v", err)
+	}
+	expected = "https://www.example.com/es-ES/productos/catalogo/"
+	if esProductURL != expected {
+		t.Errorf("Expected %q, got %q", expected, esProductURL)
+	}
+
+	// Test team pages
+	enTeamURL, err := manager.Group("frontend").Group("en").Group("company").Builder("team").Build()
+	if err != nil {
+		t.Fatalf("Failed to build English team URL: %v", err)
+	}
+	expected = "https://www.example.com/en-US/about-us/team/"
+	if enTeamURL != expected {
+		t.Errorf("Expected %q, got %q", expected, enTeamURL)
+	}
+
+	esTeamURL, err := manager.Group("frontend").Group("es").Group("company").Builder("team").Build()
+	if err != nil {
+		t.Fatalf("Failed to build Spanish team URL: %v", err)
+	}
+	expected = "https://www.example.com/es-ES/nuestra-empresa/equipo/"
+	if esTeamURL != expected {
+		t.Errorf("Expected %q, got %q", expected, esTeamURL)
+	}
+}
+
+func TestURLSegmentReorderingThroughTemplateChanges(t *testing.T) {
+	// Test URL segment reordering by changing only the template, as shown in specification
+
+	rm := urlkit.NewRouteManager()
+
+	// Set up the structure
+	rm.RegisterGroup("frontend", "https://www.example.com", map[string]string{})
+
+	frontend := rm.Group("frontend")
+	frontend.SetTemplateVar("protocol", "https")
+	frontend.SetTemplateVar("host", "www.example.com")
+
+	// Create English group
+	en := frontend.RegisterGroup("en", "", map[string]string{})
+	en.SetTemplateVar("locale", "en-US")
+
+	// Create company section
+	company := en.RegisterGroup("company", "", map[string]string{
+		"about": "/about",
+	})
+	company.SetTemplateVar("section", "about-us")
+
+	// Create Spanish group
+	es := frontend.RegisterGroup("es", "", map[string]string{})
+	es.SetTemplateVar("locale", "es-ES")
+
+	// Create Spanish company section
+	companyEs := es.RegisterGroup("company", "", map[string]string{
+		"about": "/acerca-de",
+	})
+	companyEs.SetTemplateVar("section", "nuestra-empresa")
+
+	// Test 1: Original template order - locale/section
+	frontend.SetURLTemplate("{protocol}://{host}/{locale}/{section}{route_path}")
+
+	enAboutURL, err := company.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build English about URL: %v", err)
+	}
+	expected := "https://www.example.com/en-US/about-us/about/"
+	if enAboutURL != expected {
+		t.Errorf("Original template - Expected %q, got %q", expected, enAboutURL)
+	}
+
+	esAboutURL, err := companyEs.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build Spanish about URL: %v", err)
+	}
+	expected = "https://www.example.com/es-ES/nuestra-empresa/acerca-de/"
+	if esAboutURL != expected {
+		t.Errorf("Original template - Expected %q, got %q", expected, esAboutURL)
+	}
+
+	// Test 2: Reordered template - section/locale (as shown in specification)
+	frontend.SetURLTemplate("{protocol}://{host}/{section}/{locale}{route_path}")
+
+	enAboutURLReordered, err := company.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build reordered English about URL: %v", err)
+	}
+	expected = "https://www.example.com/about-us/en-US/about/"
+	if enAboutURLReordered != expected {
+		t.Errorf("Reordered template - Expected %q, got %q", expected, enAboutURLReordered)
+	}
+
+	esAboutURLReordered, err := companyEs.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build reordered Spanish about URL: %v", err)
+	}
+	expected = "https://www.example.com/nuestra-empresa/es-ES/acerca-de/"
+	if esAboutURLReordered != expected {
+		t.Errorf("Reordered template - Expected %q, got %q", expected, esAboutURLReordered)
+	}
+
+	// Test 3: Different template structure - no protocol variable, different order
+	frontend.SetURLTemplate("{host}/{section}_{locale}{route_path}")
+
+	enAboutURLAlt, err := company.Builder("about").Build()
+	if err != nil {
+		t.Fatalf("Failed to build alternative English about URL: %v", err)
+	}
+	expected = "www.example.com/about-us_en-US/about/"
+	if enAboutURLAlt != expected {
+		t.Errorf("Alternative template - Expected %q, got %q", expected, enAboutURLAlt)
+	}
+
+	// Test 4: Add query parameters to make sure they still work
+	enAboutWithQuery, err := company.Builder("about").
+		WithQuery("ref", "homepage").
+		WithQuery("utm_source", "nav").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build URL with query: %v", err)
+	}
+	expected = "www.example.com/about-us_en-US/about/?ref=homepage&utm_source=nav"
+	if enAboutWithQuery != expected {
+		t.Errorf("Template with query - Expected %q, got %q", expected, enAboutWithQuery)
+	}
+}
+
+func TestProtocolHostPathVariableCombinations(t *testing.T) {
+	// Test various combinations of protocol, host, and path variables
+
+	rm := urlkit.NewRouteManager()
+
+	// Test 1: Full URL template with all components
+	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"users":  "/users/:id",
+		"status": "/status",
+	})
+
+	api := rm.Group("api")
+	api.SetURLTemplate("{protocol}://{subdomain}.{domain}/{env}/{version}{route_path}")
+	api.SetTemplateVar("protocol", "https")
+	api.SetTemplateVar("subdomain", "api")
+	api.SetTemplateVar("domain", "example.com")
+	api.SetTemplateVar("env", "prod")
+	api.SetTemplateVar("version", "v1")
+
+	userURL, err := api.Builder("users").
+		WithParam("id", "123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build user URL: %v", err)
+	}
+	expected := "https://api.example.com/prod/v1/users/123/"
+	if userURL != expected {
+		t.Errorf("Full template - Expected %q, got %q", expected, userURL)
+	}
+
+	// Test 2: Environment override in child group
+	staging := api.RegisterGroup("staging", "", map[string]string{
+		"debug": "/debug",
+		"logs":  "/logs/:service",
+	})
+	staging.SetTemplateVar("env", "staging")
+	staging.SetTemplateVar("subdomain", "staging-api")
+
+	debugURL, err := staging.Builder("debug").Build()
+	if err != nil {
+		t.Fatalf("Failed to build debug URL: %v", err)
+	}
+	expected = "https://staging-api.example.com/staging/v1/debug/"
+	if debugURL != expected {
+		t.Errorf("Environment override - Expected %q, got %q", expected, debugURL)
+	}
+
+	// Test 3: Protocol switching
+	insecure := api.RegisterGroup("insecure", "", map[string]string{
+		"health": "/health",
+	})
+	insecure.SetTemplateVar("protocol", "http")
+	insecure.SetTemplateVar("subdomain", "internal")
+
+	healthURL, err := insecure.Builder("health").Build()
+	if err != nil {
+		t.Fatalf("Failed to build health URL: %v", err)
+	}
+	expected = "http://internal.example.com/prod/v1/health/"
+	if healthURL != expected {
+		t.Errorf("Protocol switch - Expected %q, got %q", expected, healthURL)
+	}
+
+	// Test 4: Custom port and path prefix
+	rm.RegisterGroup("custom", "https://custom.example.com", map[string]string{
+		"webhooks": "/webhooks/:event",
+	})
+
+	custom := rm.Group("custom")
+	custom.SetURLTemplate("{protocol}://{host}:{port}/{prefix}{route_path}")
+	custom.SetTemplateVar("protocol", "https")
+	custom.SetTemplateVar("host", "webhooks.example.com")
+	custom.SetTemplateVar("port", "8443")
+	custom.SetTemplateVar("prefix", "/api/v1")
+
+	webhookURL, err := custom.Builder("webhooks").
+		WithParam("event", "user.created").
+		WithQuery("signature", "abc123").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build webhook URL: %v", err)
+	}
+	expected = "https://webhooks.example.com:8443//api/v1/webhooks/user.created/?signature=abc123"
+	if webhookURL != expected {
+		t.Errorf("Custom port and prefix - Expected %q, got %q", expected, webhookURL)
+	}
+
+	// Test 5: Dynamic host based on region
+	rm.RegisterGroup("cdn", "https://cdn.example.com", map[string]string{
+		"assets": "/assets/:file",
+		"images": "/images/:image",
+	})
+
+	cdn := rm.Group("cdn")
+	cdn.SetURLTemplate("{protocol}://{region}.{service}.{domain}{route_path}")
+	cdn.SetTemplateVar("protocol", "https")
+	cdn.SetTemplateVar("service", "cdn")
+	cdn.SetTemplateVar("domain", "example.com")
+	cdn.SetTemplateVar("region", "us-west")
+
+	// US West assets
+	assetURL, err := cdn.Builder("assets").
+		WithParam("file", "app.js").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build asset URL: %v", err)
+	}
+	expected = "https://us-west.cdn.example.com/assets/app.js/"
+	if assetURL != expected {
+		t.Errorf("Regional CDN - Expected %q, got %q", expected, assetURL)
+	}
+
+	// Change region dynamically
+	cdn.SetTemplateVar("region", "eu-central")
+
+	assetEUURL, err := cdn.Builder("assets").
+		WithParam("file", "styles.css").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build EU asset URL: %v", err)
+	}
+	expected = "https://eu-central.cdn.example.com/assets/styles.css/"
+	if assetEUURL != expected {
+		t.Errorf("EU Regional CDN - Expected %q, got %q", expected, assetEUURL)
+	}
+
+	// Test 6: Base URL override
+	rm.RegisterGroup("override", "https://original.example.com", map[string]string{
+		"data": "/data/:id",
+	})
+
+	override := rm.Group("override")
+	override.SetURLTemplate("{base_url}/custom{route_path}")
+
+	// Should use base_url from the original registration, not template vars
+	dataURL, err := override.Builder("data").
+		WithParam("id", "test").
+		Build()
+	if err != nil {
+		t.Fatalf("Failed to build data URL: %v", err)
+	}
+	expected = "https://original.example.com/custom/data/test/"
+	if dataURL != expected {
+		t.Errorf("Base URL usage - Expected %q, got %q", expected, dataURL)
+	}
 }
