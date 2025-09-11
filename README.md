@@ -32,7 +32,7 @@ func main() {
     rm := urlkit.NewRouteManager()
 
     // Register route groups
-    rm.RegisterRoute("api", "https://api.example.com", map[string]string{
+    rm.RegisterGroup("api", "https://api.example.com", map[string]string{
         "user":     "/users/:id",
         "profile":  "/users/:id/profile",
     })
@@ -60,7 +60,7 @@ Central manager for organizing route groups.
 
 ```go
 rm := urlkit.NewRouteManager()
-rm.RegisterRoute("group-name", "base-url", routes)
+rm.RegisterGroup("group-name", "base-url", routes)
 ```
 
 ### Group
@@ -155,20 +155,20 @@ url = group.Builder("userPost").
 rm := urlkit.NewRouteManager()
 
 // Frontend routes
-rm.RegisterRoute("frontend", "https://app.example.com", map[string]string{
+rm.RegisterGroup("frontend", "https://app.example.com", map[string]string{
     "login":    "/auth/login",
     "dashboard": "/dashboard",
     "profile":   "/profile/:userId",
 })
 
 // API routes
-rm.RegisterRoute("api", "https://api.example.com/v1", map[string]string{
+rm.RegisterGroup("api", "https://api.example.com/v1", map[string]string{
     "users":  "/users/:id",
     "posts":  "/posts",
 })
 
 // Webhook routes
-rm.RegisterRoute("webhooks", "https://webhooks.example.com", map[string]string{
+rm.RegisterGroup("webhooks", "https://webhooks.example.com", map[string]string{
     "stripe": "/webhooks/stripe",
     "github": "/webhooks/github/:event",
 })
@@ -188,7 +188,7 @@ apiURL := rm.Group("api").Builder("users").
 
 ```go
 rm := urlkit.NewRouteManager()
-rm.RegisterRoute("api", "https://api.example.com", map[string]string{
+rm.RegisterGroup("api", "https://api.example.com", map[string]string{
     "users": "/users/:id",
     "posts": "/posts/:id",
 })
