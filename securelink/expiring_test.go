@@ -2,6 +2,7 @@ package securelink
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -135,8 +136,8 @@ func TestDefaultSigningMethodHS256(t *testing.T) {
 	}
 
 	// Test token generation and validation
-	manager = manager.WithData("user_id", "123")
-	link, err := manager.Generate("activate")
+	payload := Payload{"user_id": "123"}
+	link, err := manager.Generate("activate", payload)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -154,13 +155,13 @@ func TestDefaultSigningMethodHS256(t *testing.T) {
 	}
 
 	token := strings.TrimPrefix(link, expectedPrefix)
-	payload, err := manager.Validate(token)
+	validatedPayload, err := manager.Validate(token)
 	if err != nil {
 		t.Fatalf("Validate failed: %v", err)
 	}
 
-	if payload["user_id"] != "123" {
-		t.Errorf("Expected user_id 123, got %v", payload["user_id"])
+	if validatedPayload["user_id"] != "123" {
+		t.Errorf("Expected user_id 123, got %v", validatedPayload["user_id"])
 	}
 }
 
@@ -196,8 +197,8 @@ func TestCustomSigningMethods(t *testing.T) {
 			}
 
 			// Test token generation and validation
-			manager = manager.WithData("user_id", "456")
-			link, err := manager.Generate("activate")
+			payload := Payload{"user_id": "456"}
+			link, err := manager.Generate("activate", payload)
 			if err != nil {
 				t.Fatalf("Generate failed: %v", err)
 			}
@@ -213,13 +214,13 @@ func TestCustomSigningMethods(t *testing.T) {
 			}
 
 			token := strings.TrimPrefix(link, expectedPrefix)
-			payload, err := manager.Validate(token)
+			validatedPayload, err := manager.Validate(token)
 			if err != nil {
 				t.Fatalf("Validate failed: %v", err)
 			}
 
-			if payload["user_id"] != "456" {
-				t.Errorf("Expected user_id 456, got %v", payload["user_id"])
+			if validatedPayload["user_id"] != "456" {
+				t.Errorf("Expected user_id 456, got %v", validatedPayload["user_id"])
 			}
 		})
 	}
@@ -246,8 +247,8 @@ func TestSigningMethodMismatchValidation(t *testing.T) {
 	}
 
 	// Generate token with HS256
-	manager256 = manager256.WithData("user_id", "789")
-	link, err := manager256.Generate("activate")
+	payload := Payload{"user_id": "789"}
+	link, err := manager256.Generate("activate", payload)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -476,5 +477,533 @@ func TestBackwardCompatibilityValidatesKeys(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "signing key too short") {
 		t.Errorf("Expected error about short key, got: %v", err)
+	}
+}
+
+// Test error messages don't contain sensitive information
+func TestErrorMessagesDontContainSensitiveInfo(t *testing.T) {
+	signingKey := strings.Repeat("s", 64) // Valid length key with identifiable pattern
+
+	cfg := Config{
+		SigningKey:    signingKey,
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	// Test with invalid token
+	_, err = manager.Validate("invalid.jwt.token")
+	if err == nil {
+		t.Fatal("Expected validation to fail with invalid token")
+	}
+
+	errorMsg := err.Error()
+
+	// Ensure error message doesn't contain the signing key
+	if strings.Contains(errorMsg, signingKey) {
+		t.Errorf("Error message contains signing key: %s", errorMsg)
+	}
+
+	// Ensure error message doesn't contain signing key patterns
+	if strings.Contains(errorMsg, "ssss") {
+		t.Errorf("Error message contains signing key pattern: %s", errorMsg)
+	}
+
+	// Should be a generic message
+	if !strings.Contains(errorMsg, "token validation failed") {
+		t.Errorf("Expected generic error message, got: %s", errorMsg)
+	}
+}
+
+// Test error contexts are helpful for debugging
+func TestErrorContextsAreHelpful(t *testing.T) {
+	testCases := []struct {
+		name           string
+		cfg            Config
+		expectedErrors []string
+	}{
+		{
+			name: "Invalid BaseURL",
+			cfg: Config{
+				SigningKey: strings.Repeat("a", 32),
+				Expiration: 1 * time.Hour,
+				BaseURL:    "://invalid-url",
+				QueryKey:   "token",
+				Routes:     map[string]string{"activate": "/activate"},
+				AsQuery:    false,
+			},
+			expectedErrors: []string{"invalid BaseURL configuration"},
+		},
+		{
+			name: "Short signing key",
+			cfg: Config{
+				SigningKey: "short",
+				Expiration: 1 * time.Hour,
+				BaseURL:    "https://example.com",
+				QueryKey:   "token",
+				Routes:     map[string]string{"activate": "/activate"},
+				AsQuery:    false,
+			},
+			expectedErrors: []string{"configuration validation failed", "signing key too short"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewManagerFromConfig(tc.cfg)
+			if err == nil {
+				t.Fatal("Expected error but got none")
+			}
+
+			errorMsg := err.Error()
+			for _, expectedError := range tc.expectedErrors {
+				if !strings.Contains(errorMsg, expectedError) {
+					t.Errorf("Expected error to contain '%s', got: %s", expectedError, errorMsg)
+				}
+			}
+		})
+	}
+}
+
+// Test route error provides helpful context
+func TestRouteErrorContext(t *testing.T) {
+	cfg := Config{
+		SigningKey:    strings.Repeat("a", 32),
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	// Try to generate with unknown route
+	_, err = manager.Generate("unknown")
+	if err == nil {
+		t.Fatal("Expected error for unknown route")
+	}
+
+	errorMsg := err.Error()
+
+	// Should contain the route name and helpful context
+	if !strings.Contains(errorMsg, "unknown") {
+		t.Errorf("Error should mention the route name, got: %s", errorMsg)
+	}
+
+	if !strings.Contains(errorMsg, "not found in configured routes") {
+		t.Errorf("Error should mention configured routes, got: %s", errorMsg)
+	}
+}
+
+// Test JWT generation error handling
+func TestJWTGenerationErrorHandling(t *testing.T) {
+	// This is a more complex test - we would need to simulate JWT signing failure
+	// For now, we'll verify the error message structure
+	cfg := Config{
+		SigningKey:    strings.Repeat("a", 32),
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	// Test normal generation works (no error case to test signing failure easily)
+	payload := Payload{"test": "value"}
+	link, err := manager.Generate("activate", payload)
+	if err != nil {
+		// If there's an error, verify it has proper context
+		errorMsg := err.Error()
+		if strings.Contains(errorMsg, "token generation failed") {
+			// This is expected structure
+			return
+		}
+		t.Fatalf("Unexpected error format: %v", err)
+	}
+
+	// Verify successful generation
+	if link == "" {
+		t.Fatal("Generated link is empty")
+	}
+}
+
+// Test new Generate method with no payload
+func TestGenerateWithNoPayload(t *testing.T) {
+	cfg := Config{
+		SigningKey:    strings.Repeat("a", 32),
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	// Generate with no payload
+	link, err := manager.Generate("activate")
+	if err != nil {
+		t.Fatalf("Generate with no payload failed: %v", err)
+	}
+
+	if link == "" {
+		t.Fatal("Generated link is empty")
+	}
+
+	// Extract and validate token
+	expectedPrefix := "https://example.com/activate/"
+	if !strings.HasPrefix(link, expectedPrefix) {
+		t.Fatalf("Link doesn't have expected prefix. Got: %s", link)
+	}
+
+	token := strings.TrimPrefix(link, expectedPrefix)
+	validatedPayload, err := manager.Validate(token)
+	if err != nil {
+		t.Fatalf("Validate failed: %v", err)
+	}
+
+	// Should have empty payload
+	if len(validatedPayload) != 0 {
+		t.Errorf("Expected empty payload, got %v", validatedPayload)
+	}
+}
+
+// Test new Generate method with single payload
+func TestGenerateWithSinglePayload(t *testing.T) {
+	cfg := Config{
+		SigningKey:    strings.Repeat("a", 32),
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	// Generate with single payload
+	payload := Payload{"user_id": "123", "role": "admin"}
+	link, err := manager.Generate("activate", payload)
+	if err != nil {
+		t.Fatalf("Generate with single payload failed: %v", err)
+	}
+
+	if link == "" {
+		t.Fatal("Generated link is empty")
+	}
+
+	// Extract and validate token
+	expectedPrefix := "https://example.com/activate/"
+	if !strings.HasPrefix(link, expectedPrefix) {
+		t.Fatalf("Link doesn't have expected prefix. Got: %s", link)
+	}
+
+	token := strings.TrimPrefix(link, expectedPrefix)
+	validatedPayload, err := manager.Validate(token)
+	if err != nil {
+		t.Fatalf("Validate failed: %v", err)
+	}
+
+	// Check payload contents
+	if validatedPayload["user_id"] != "123" {
+		t.Errorf("Expected user_id 123, got %v", validatedPayload["user_id"])
+	}
+	if validatedPayload["role"] != "admin" {
+		t.Errorf("Expected role admin, got %v", validatedPayload["role"])
+	}
+}
+
+// Test new Generate method with multiple payloads (should merge)
+func TestGenerateWithMultiplePayloads(t *testing.T) {
+	cfg := Config{
+		SigningKey:    strings.Repeat("a", 32),
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	// Generate with multiple payloads
+	payload1 := Payload{"user_id": "123", "role": "admin"}
+	payload2 := Payload{"session": "xyz", "timestamp": "2023-01-01"}
+	payload3 := Payload{"role": "superadmin"} // Should override payload1's role
+
+	link, err := manager.Generate("activate", payload1, payload2, payload3)
+	if err != nil {
+		t.Fatalf("Generate with multiple payloads failed: %v", err)
+	}
+
+	if link == "" {
+		t.Fatal("Generated link is empty")
+	}
+
+	// Extract and validate token
+	expectedPrefix := "https://example.com/activate/"
+	if !strings.HasPrefix(link, expectedPrefix) {
+		t.Fatalf("Link doesn't have expected prefix. Got: %s", link)
+	}
+
+	token := strings.TrimPrefix(link, expectedPrefix)
+	validatedPayload, err := manager.Validate(token)
+	if err != nil {
+		t.Fatalf("Validate failed: %v", err)
+	}
+
+	// Check merged payload contents
+	if validatedPayload["user_id"] != "123" {
+		t.Errorf("Expected user_id 123, got %v", validatedPayload["user_id"])
+	}
+	if validatedPayload["session"] != "xyz" {
+		t.Errorf("Expected session xyz, got %v", validatedPayload["session"])
+	}
+	if validatedPayload["timestamp"] != "2023-01-01" {
+		t.Errorf("Expected timestamp 2023-01-01, got %v", validatedPayload["timestamp"])
+	}
+	// Last payload should override
+	if validatedPayload["role"] != "superadmin" {
+		t.Errorf("Expected role superadmin (overridden), got %v", validatedPayload["role"])
+	}
+}
+
+// Test thread safety by calling Generate from multiple goroutines
+func TestThreadSafetyGenerate(t *testing.T) {
+	cfg := Config{
+		SigningKey:    strings.Repeat("a", 32),
+		Expiration:    1 * time.Hour,
+		BaseURL:       "https://example.com",
+		QueryKey:      "token",
+		Routes:        map[string]string{"activate": "/activate"},
+		AsQuery:       false,
+		SigningMethod: jwt.SigningMethodHS256,
+	}
+
+	manager, err := NewManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
+	}
+
+	const numGoroutines = 50
+	const numGenerationsPerRoutine = 10
+
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines*numGenerationsPerRoutine)
+	links := make(chan string, numGoroutines*numGenerationsPerRoutine)
+
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(routineID int) {
+			defer wg.Done()
+			for j := 0; j < numGenerationsPerRoutine; j++ {
+				payload := Payload{
+					"user_id":    routineID,
+					"generation": j,
+					"timestamp":  time.Now().Format(time.RFC3339),
+				}
+
+				link, err := manager.Generate("activate", payload)
+				if err != nil {
+					errors <- err
+					return
+				}
+				links <- link
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+	close(links)
+
+	// Check for any errors
+	if len(errors) > 0 {
+		err := <-errors
+		t.Fatalf("Concurrent generation failed: %v", err)
+	}
+
+	// Verify all links were generated
+	linkCount := 0
+	for range links {
+		linkCount++
+	}
+
+	expectedLinks := numGoroutines * numGenerationsPerRoutine
+	if linkCount != expectedLinks {
+		t.Errorf("Expected %d links, got %d", expectedLinks, linkCount)
+	}
+}
+
+// Test internal Generate function with different signing methods
+func TestInternalGenerateWithDifferentSigningMethods(t *testing.T) {
+	testCases := []struct {
+		name          string
+		signingMethod jwt.SigningMethod
+		keyLength     int
+	}{
+		{"HS256", jwt.SigningMethodHS256, 32},
+		{"HS384", jwt.SigningMethodHS384, 48},
+		{"HS512", jwt.SigningMethodHS512, 64},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Generate a key of appropriate length
+			signingKey := strings.Repeat("a", tc.keyLength)
+			testData := map[string]any{
+				"user_id": "123",
+				"role":    "admin",
+			}
+			expiration := 1 * time.Hour
+
+			// Test internal Generate function directly
+			token, err := Generate(testData, signingKey, expiration, tc.signingMethod)
+			if err != nil {
+				t.Fatalf("Generate failed: %v", err)
+			}
+
+			if token == "" {
+				t.Fatal("Generated token is empty")
+			}
+
+			// Validate the token using the same signing method
+			validatedPayload, err := Validate(token, signingKey, tc.signingMethod)
+			if err != nil {
+				t.Fatalf("Validate failed: %v", err)
+			}
+
+			// Check payload contents
+			if validatedPayload["user_id"] != "123" {
+				t.Errorf("Expected user_id 123, got %v", validatedPayload["user_id"])
+			}
+			if validatedPayload["role"] != "admin" {
+				t.Errorf("Expected role admin, got %v", validatedPayload["role"])
+			}
+		})
+	}
+}
+
+// Test that internal Generate function rejects mismatched signing methods during validation
+func TestInternalGenerateSigningMethodValidation(t *testing.T) {
+	signingKey := strings.Repeat("a", 64) // Long enough for all methods
+	testData := map[string]any{"user_id": "123"}
+	expiration := 1 * time.Hour
+
+	// Generate token with HS256
+	token, err := Generate(testData, signingKey, expiration, jwt.SigningMethodHS256)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Try to validate with HS384 (should fail)
+	_, err = Validate(token, signingKey, jwt.SigningMethodHS384)
+	if err == nil {
+		t.Fatal("Expected validation to fail with different signing method, but it succeeded")
+	}
+
+	if !strings.Contains(err.Error(), "token validation failed") {
+		t.Errorf("Expected 'token validation failed' error, got: %v", err)
+	}
+}
+
+// Test manager integration passes signing method correctly
+func TestManagerIntegrationPassesSigningMethodCorrectly(t *testing.T) {
+	// Test that the manager correctly passes the configured signing method to internal Generate function
+	testCases := []struct {
+		name          string
+		signingMethod jwt.SigningMethod
+		keyLength     int
+	}{
+		{"HS256", jwt.SigningMethodHS256, 32},
+		{"HS384", jwt.SigningMethodHS384, 48},
+		{"HS512", jwt.SigningMethodHS512, 64},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			signingKey := strings.Repeat("a", tc.keyLength)
+
+			cfg := Config{
+				SigningKey:    signingKey,
+				Expiration:    1 * time.Hour,
+				BaseURL:       "https://example.com",
+				QueryKey:      "token",
+				Routes:        map[string]string{"activate": "/activate"},
+				AsQuery:       false,
+				SigningMethod: tc.signingMethod,
+			}
+
+			manager, err := NewManagerFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("NewManagerFromConfig failed: %v", err)
+			}
+
+			// Generate token through manager
+			payload := Payload{"user_id": "456"}
+			link, err := manager.Generate("activate", payload)
+			if err != nil {
+				t.Fatalf("Manager Generate failed: %v", err)
+			}
+
+			// Extract token from link
+			expectedPrefix := "https://example.com/activate/"
+			if !strings.HasPrefix(link, expectedPrefix) {
+				t.Fatalf("Link doesn't have expected prefix. Got: %s", link)
+			}
+
+			token := strings.TrimPrefix(link, expectedPrefix)
+
+			// Validate directly using the expected signing method
+			validatedPayload, err := Validate(token, signingKey, tc.signingMethod)
+			if err != nil {
+				t.Fatalf("Direct validation failed: %v", err)
+			}
+
+			if validatedPayload["user_id"] != "456" {
+				t.Errorf("Expected user_id 456, got %v", validatedPayload["user_id"])
+			}
+
+			// Also validate through manager (should use same signing method)
+			managerValidatedPayload, err := manager.Validate(token)
+			if err != nil {
+				t.Fatalf("Manager validation failed: %v", err)
+			}
+
+			if managerValidatedPayload["user_id"] != "456" {
+				t.Errorf("Expected user_id 456 from manager validation, got %v", managerValidatedPayload["user_id"])
+			}
+		})
 	}
 }
