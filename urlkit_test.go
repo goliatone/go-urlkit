@@ -297,7 +297,7 @@ func TestMustValidateSuccess(t *testing.T) {
 	rm.MustValidate(expected)
 }
 
-func TestNewRouteManagerFromConfig(t *testing.T) {
+func TestNewRouteManagerWithConfig(t *testing.T) {
 	config := urlkit.Config{
 		Groups: []urlkit.GroupConfig{
 			{
@@ -318,7 +318,7 @@ func TestNewRouteManagerFromConfig(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Test that groups were registered correctly
 	frontend := manager.Group("frontend")
@@ -392,7 +392,7 @@ func TestConfigValidation(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Test successful validation
 	expectedRoutes := map[string][]string{
@@ -416,7 +416,7 @@ func TestEmptyConfig(t *testing.T) {
 		Groups: []urlkit.GroupConfig{},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Should not panic but have no groups
 	defer func() {
@@ -438,7 +438,7 @@ func TestConfigWithEmptyPaths(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 	group := manager.Group("empty")
 
 	// Should be able to access group but no routes
@@ -463,7 +463,7 @@ func TestConfigIntegrationWithExistingAPI(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Add additional group manually after config
 	manager.RegisterGroup("manual", "http://manual.com", map[string]string{
@@ -646,7 +646,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Test root group access
 	apiGroup := manager.Group("api")
@@ -854,7 +854,7 @@ func TestConfigurationErrorCases(t *testing.T) {
 				}
 			}
 		}()
-		urlkit.NewRouteManagerFromConfig(invalidConfig)
+		urlkit.NewRouteManager(&invalidConfig)
 	}()
 
 	if !didPanic {
@@ -906,7 +906,7 @@ func TestConfigurationWithEmptyOrNilPaths(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Test that groups were created despite empty paths
 	apiGroup := manager.Group("api")
@@ -1495,7 +1495,7 @@ func ExampleRouteManager_configurationBasedSetup() {
 	}
 
 	// Create route manager from configuration
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Build URLs using the configured nested structure
 	// Frontend home: https://myapp.com/
@@ -2049,7 +2049,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Test root group template URL building
 	homeURL, err := manager.Group("frontend").Builder("home").Build()
