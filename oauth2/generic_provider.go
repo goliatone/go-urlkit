@@ -210,7 +210,7 @@ func (g *GenericProvider) SetScopes(scopes []string) {
 //   - client: HTTP client configured with valid OAuth2 token
 //
 // Returns:
-//   - map[string]interface{}: user profile data parsed from JSON response
+//   - map[string]any: user profile data parsed from JSON response
 //   - error: HTTP, JSON parsing, or provider API errors
 //
 // Error Conditions:
@@ -243,7 +243,7 @@ func (g *GenericProvider) SetScopes(scopes []string) {
 //
 //	userID := userInfo["id"].(string)
 //	email, hasEmail := userInfo["email"].(string)
-func (g *GenericProvider) GetUserInfo(client *http.Client) (map[string]interface{}, error) {
+func (g *GenericProvider) GetUserInfo(client *http.Client) (map[string]any, error) {
 	// Perform GET request to user info endpoint
 	resp, err := client.Get(g.userInfoURL)
 	if err != nil {
@@ -257,7 +257,7 @@ func (g *GenericProvider) GetUserInfo(client *http.Client) (map[string]interface
 	}
 
 	// Parse JSON response into map
-	var userInfo map[string]interface{}
+	var userInfo map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
 		return nil, fmt.Errorf("failed to decode user info JSON: %w", err)
 	}

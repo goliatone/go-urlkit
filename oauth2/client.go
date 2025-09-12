@@ -366,7 +366,7 @@ func (c *Client[T]) Exchange(ctx context.Context, code string) (*oauth2.Token, e
 //   - token: OAuth2 token with sufficient scopes for user info access
 //
 // Returns:
-//   - map[string]interface{}: user profile data as key-value pairs
+//   - map[string]any: user profile data as key-value pairs
 //   - error: network, authentication, or parsing errors
 //
 // Common user info fields (provider-dependent):
@@ -419,7 +419,7 @@ func (c *Client[T]) Exchange(ctx context.Context, code string) (*oauth2.Token, e
 //   - Most providers require "profile" scope for basic user info
 //   - Email access typically requires "email" or "userinfo.email" scope
 //   - Check provider documentation for specific scope requirements
-func (c *Client[T]) GetUserInfo(token *oauth2.Token) (map[string]interface{}, error) {
+func (c *Client[T]) GetUserInfo(token *oauth2.Token) (map[string]any, error) {
 	// Create authenticated HTTP client
 	httpClient := c.config.Client(context.Background(), token)
 

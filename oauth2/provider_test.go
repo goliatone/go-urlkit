@@ -214,7 +214,7 @@ func TestGenericProviderSetScopes(t *testing.T) {
 // TestGenericProviderGetUserInfo tests the GetUserInfo method
 func TestGenericProviderGetUserInfo(t *testing.T) {
 	// Create test server
-	expectedUserInfo := map[string]interface{}{
+	expectedUserInfo := map[string]any{
 		"id":    "12345",
 		"email": "test@example.com",
 		"name":  "Test User",

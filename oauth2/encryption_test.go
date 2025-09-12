@@ -13,7 +13,7 @@ func TestEncryptDecryptState(t *testing.T) {
 		name        string
 		key         string
 		state       string
-		data        interface{}
+		data        any
 		expectError bool
 	}{
 		{
@@ -35,7 +35,7 @@ func TestEncryptDecryptState(t *testing.T) {
 			name:  "complex nested data",
 			key:   "this-is-a-32-character-key-ok!!!",
 			state: "complex-state",
-			data: map[string]interface{}{
+			data: map[string]any{
 				"user_id":   "user123",
 				"return_to": "/dashboard",
 				"metadata": map[string]string{
@@ -82,7 +82,7 @@ func TestEncryptDecryptState(t *testing.T) {
 			}
 
 			// Decrypt the state
-			decryptedState, decryptedData, err := DecryptState[interface{}]([]byte(tt.key), encrypted)
+			decryptedState, decryptedData, err := DecryptState[any]([]byte(tt.key), encrypted)
 			if err != nil {
 				t.Fatalf("decryption failed: %v", err)
 			}
@@ -106,7 +106,7 @@ func TestEncryptStateErrors(t *testing.T) {
 		name        string
 		key         []byte
 		state       string
-		data        interface{}
+		data        any
 		expectError error
 	}{
 		{

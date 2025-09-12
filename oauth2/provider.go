@@ -100,7 +100,7 @@ type Provider interface {
 	//   - client: HTTP client configured with OAuth2 token
 	//
 	// Returns:
-	//   - map[string]interface{}: user profile data as key-value pairs
+	//   - map[string]any: user profile data as key-value pairs
 	//   - error: any error during HTTP request or response parsing
 	//
 	// Common user info fields include:
@@ -128,5 +128,5 @@ type Provider interface {
 	//
 	//   email := userInfo["email"].(string)
 	//   name := userInfo["name"].(string)
-	GetUserInfo(client *http.Client) (map[string]interface{}, error)
+	GetUserInfo(client *http.Client) (map[string]any, error)
 }

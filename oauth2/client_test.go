@@ -371,7 +371,7 @@ func TestClientExchange(t *testing.T) {
 		}
 
 		// Return mock token response
-		response := map[string]interface{}{
+		response := map[string]any{
 			"access_token":  expectedToken.AccessToken,
 			"refresh_token": expectedToken.RefreshToken,
 			"token_type":    expectedToken.TokenType,
@@ -515,7 +515,7 @@ func TestClientExchangeErrors(t *testing.T) {
 
 // TestClientGetUserInfo tests user info retrieval
 func TestClientGetUserInfo(t *testing.T) {
-	expectedUserInfo := map[string]interface{}{
+	expectedUserInfo := map[string]any{
 		"id":    "user123",
 		"email": "test@example.com",
 		"name":  "Test User",
@@ -673,7 +673,7 @@ func TestClientConcurrency(t *testing.T) {
 func TestClientIntegration(t *testing.T) {
 	// This test simulates the complete OAuth2 flow without external dependencies
 
-	expectedUserInfo := map[string]interface{}{
+	expectedUserInfo := map[string]any{
 		"id":    "integration-user-123",
 		"email": "integration@example.com",
 		"name":  "Integration Test User",
@@ -689,7 +689,7 @@ func TestClientIntegration(t *testing.T) {
 				return
 			}
 
-			response := map[string]interface{}{
+			response := map[string]any{
 				"access_token":  "integration-access-token",
 				"refresh_token": "integration-refresh-token",
 				"token_type":    "Bearer",
