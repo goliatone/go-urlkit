@@ -12,10 +12,12 @@ go get github.com/goliatone/go-urlkit
 
 - `Express.js` style route templates with parameter substitution
 - Route organization by groups (frontend, backend, webhooks, etc.)
+- Template-based URL generation with variable inheritance
 - Fluent builder API for URL construction
 - Built in validation for route configuration
 - Type safe parameter and query handling
 - URL encoding and query string management
+- Complete OAuth2 client with state management and encryption
 
 ## Quick Start
 
@@ -232,6 +234,65 @@ url, _ = group.Render("webhook", urlkit.Params{
 // Result: https://api.example.com/webhooks/gmail
 ```
 
+### Template Based URL Generation
+
+The library supports template based URL generation that provides flexible, maintainable URL structures with variable inheritance:
+
+```go
+// Create a route manager
+rm := urlkit.NewRouteManager()
+
+// Create a group with URL template
+app, _ := rm.RegisterGroup("app", "https://app.example.com", map[string]string{
+    "dashboard": "/dashboard",
+    "profile":   "/profile/:userId",
+})
+
+// Set up template with variables
+app.SetURLTemplate("https://{tenant}.{domain}{route_path}")
+app.SetTemplateVar("domain", "myapp.com")
+
+// Create tenant-specific child groups
+acme, _ := app.RegisterNestedGroup("acme", "", map[string]string{
+    "dashboard": "/dashboard",
+    "settings":  "/settings/:section",
+})
+acme.SetTemplateVar("tenant", "acme")
+
+// Generate URLs using the template
+url, _ := acme.Builder("dashboard").Build()
+// Result: https://acme.myapp.com/dashboard
+
+url, _ = acme.Builder("settings").WithParam("section", "billing").Build()
+// Result: https://acme.myapp.com/settings/billing
+```
+
+#### Internationalization with Templates
+
+```go
+// Load i18n configuration from JSON
+rm, err := urlkit.NewRouteManagerFromConfigFile("i18n_config.json")
+
+// English URLs
+enGroup := rm.Group("frontend.en")
+aboutEN, _ := enGroup.Builder("about").Build()
+// Result: https://www.example.com/en/about-us
+
+// Spanish URLs
+esGroup := rm.Group("frontend.es")
+aboutES, _ := esGroup.Builder("about").Build()
+// Result: https://www.example.com/es/acerca-de
+```
+
+#### Template Features
+
+- **Variable Inheritance**: Child groups inherit parent variables and can override them
+- **Dynamic Variables**: Automatically provided variables like `route_path` and `base_url`
+- **Flexible Patterns**: Support for protocol, subdomain, path, and query customization
+- **JSON Configuration**: Load complex template configurations from JSON files
+
+See [examples/](examples/) for comprehensive template usage examples.
+
 ### URL Joining Utility
 
 The package also provides a standalone URL joining function:
@@ -254,6 +315,169 @@ url = urlkit.JoinURL("https://api.example.com?existing=1", "/users",
 )
 // Result: https://api.example.com/users?existing=1&new=2
 ```
+
+## OAuth2 Integration
+
+The library includes a complete OAuth2 client with state management, encryption, and support for multiple providers. It provides a secure, type safe way to implement OAuth2 authorization flows.
+
+### Features
+
+- **Generic Provider Interface**: Support for any OAuth2 provider (Google, GitHub, Facebook, etc.)
+- **State Management**: Automatic CSRF protection with encrypted state parameters
+- **Type-Safe User Data**: Attach custom data structures to the OAuth2 flow
+- **Built-in Encryption**: AES encryption for sensitive state data
+- **Thread-Safe**: Concurrent operation support
+- **Comprehensive Error Handling**: Detailed error types for different failure scenarios
+
+### Quick Start
+
+```go
+import "github.com/goliatone/go-urlkit/oauth2"
+
+// Define custom user data for the OAuth2 flow
+type UserContext struct {
+    UserID   string `json:"user_id"`
+    ReturnTo string `json:"return_to"`
+}
+
+// Create a Google OAuth2 provider
+provider, err := oauth2.NewGoogleProvider()
+if err != nil {
+    log.Fatal(err)
+}
+
+// Create OAuth2 client with user context type
+client, err := oauth2.NewClient[UserContext](
+    provider,
+    "your-google-client-id",
+    "your-google-client-secret",
+    "http://localhost:8080/oauth/callback",
+    "your-24-character-encrypt-key",
+)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Generate authorization URL with user context
+userCtx := UserContext{
+    UserID:   "user123",
+    ReturnTo: "/dashboard",
+}
+authURL, err := client.GenerateURL("random-csrf-token", userCtx)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Redirect user to authURL...
+
+// Handle OAuth2 callback
+func handleCallback(w http.ResponseWriter, r *http.Request) {
+    code := r.URL.Query().Get("code")
+    state := r.URL.Query().Get("state")
+
+    // Validate state and retrieve user context
+    originalState, userCtx, err := client.ValidateState(state)
+    if err != nil {
+        http.Error(w, "Invalid state", http.StatusBadRequest)
+        return
+    }
+
+    // Exchange code for access token
+    token, err := client.Exchange(r.Context(), code)
+    if err != nil {
+        http.Error(w, "Token exchange failed", http.StatusInternalServerError)
+        return
+    }
+
+    // Get user information
+    userInfo, err := client.GetUserInfo(token)
+    if err != nil {
+        http.Error(w, "Failed to get user info", http.StatusInternalServerError)
+        return
+    }
+
+    // Use userCtx.ReturnTo to redirect user back to their original destination
+    // userInfo contains the OAuth2 user profile data
+}
+```
+
+### Extending OAuth2 Scopes
+
+```go
+// Add additional scopes for Google services
+oauth2.AddGoogleScopes(provider, []string{"gmail", "drive"})
+
+// Or set custom scopes
+provider.SetScopes([]string{
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+})
+```
+
+### Custom OAuth2 Providers
+
+```go
+// Implement the Provider interface for custom OAuth2 providers
+type CustomProvider struct {
+    name      string
+    config    *oauth2.Config
+    scopes    []string
+    userURL   string
+}
+
+func (p *CustomProvider) Name() string { return p.name }
+func (p *CustomProvider) Config() *oauth2.Config { return p.config }
+func (p *CustomProvider) Scopes() []string { return p.scopes }
+func (p *CustomProvider) SetScopes(scopes []string) { p.scopes = scopes }
+func (p *CustomProvider) GetUserInfo(token *oauth2.Token) (map[string]any, error) {
+    // Implementation for fetching user info from your provider
+}
+
+// Use your custom provider
+provider := &CustomProvider{
+    name: "mycorp",
+    config: &oauth2.Config{
+        ClientID:     "your-client-id",
+        ClientSecret: "your-client-secret",
+        Endpoint: oauth2.Endpoint{
+            AuthURL:  "https://auth.mycorp.com/oauth/authorize",
+            TokenURL: "https://auth.mycorp.com/oauth/token",
+        },
+    },
+    userURL: "https://api.mycorp.com/user",
+}
+
+client, err := oauth2.NewClient[UserContext](provider, ...)
+```
+
+### OAuth2 Error Handling
+
+```go
+// State validation errors
+_, userCtx, err := client.ValidateState(state)
+if err != nil {
+    switch {
+    case errors.Is(err, oauth2.ErrStateNotFound):
+        // CSRF attack or expired state
+    case errors.Is(err, oauth2.ErrDecryptionFailed):
+        // Encryption key mismatch or corrupted data
+    case errors.Is(err, oauth2.ErrDeserializationFailed):
+        // JSON parsing failed for user data
+    }
+}
+```
+
+### OAuth2 Examples
+
+See [examples/oauth2_example.go](examples/oauth2_example.go) and [examples/oauth2/](examples/oauth2/) for comprehensive OAuth2 integration examples including:
+
+- Complete authorization flow implementation
+- State management and validation
+- Error handling for different scenarios
+- Multi provider support
+- User data preservation across the OAuth2 flow
 
 ## Error Handling
 
@@ -303,6 +527,8 @@ Run tests with coverage:
 
 - Go 1.23.4 or later
 - github.com/soongo/path-to-regexp v1.6.4
+- golang.org/x/oauth2 (for OAuth2 functionality)
+- github.com/google/uuid (for OAuth2 functionality)
 
 ## License
 
