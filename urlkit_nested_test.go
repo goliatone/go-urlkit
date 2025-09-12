@@ -271,8 +271,16 @@ func TestNestedGroupURLBuilding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build nested checkout URL: %v", err)
 	}
-	expected = "https://shop.example.com/us/payment/checkout/billing?return=cart&method=credit"
-	if checkoutURL != expected {
-		t.Errorf("Expected %q, got %q", expected, checkoutURL)
+	// Check URL base and path first
+	expectedBase := "https://shop.example.com/us/payment/checkout/billing?"
+	if !strings.HasPrefix(checkoutURL, expectedBase) {
+		t.Errorf("Expected URL to start with %q, got %q", expectedBase, checkoutURL)
+	}
+	// Check that both query parameters are present (order may vary due to map iteration)
+	if !strings.Contains(checkoutURL, "return=cart") {
+		t.Errorf("Expected URL to contain 'return=cart', got %q", checkoutURL)
+	}
+	if !strings.Contains(checkoutURL, "method=credit") {
+		t.Errorf("Expected URL to contain 'method=credit', got %q", checkoutURL)
 	}
 }

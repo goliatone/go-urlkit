@@ -1,6 +1,7 @@
 package urlkit_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/goliatone/go-urlkit"
@@ -242,9 +243,17 @@ func TestURLSegmentReorderingThroughTemplateChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build URL with query: %v", err)
 	}
-	expected = "www.example.com/about-us_en-US/about/?ref=homepage&utm_source=nav"
-	if enAboutWithQuery != expected {
-		t.Errorf("Template with query - Expected %q, got %q", expected, enAboutWithQuery)
+	// Check URL base and path first
+	expectedBase := "www.example.com/about-us_en-US/about/?"
+	if !strings.HasPrefix(enAboutWithQuery, expectedBase) {
+		t.Errorf("Template with query - Expected URL to start with %q, got %q", expectedBase, enAboutWithQuery)
+	}
+	// Check that both query parameters are present (order may vary due to map iteration)
+	if !strings.Contains(enAboutWithQuery, "ref=homepage") {
+		t.Errorf("Template with query - Expected URL to contain 'ref=homepage', got %q", enAboutWithQuery)
+	}
+	if !strings.Contains(enAboutWithQuery, "utm_source=nav") {
+		t.Errorf("Template with query - Expected URL to contain 'utm_source=nav', got %q", enAboutWithQuery)
 	}
 }
 
