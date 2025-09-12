@@ -81,7 +81,7 @@ func TestSecurelinkBackwardCompatibility(t *testing.T) {
 		asQuery:    true, // Test query-based URLs
 	}
 
-	manager, err := securelink.NewManager(cfg)
+	manager, err := securelink.NewManagerFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create manager with legacy API: %v", err)
 	}
@@ -112,9 +112,9 @@ type testConfig struct {
 	asQuery    bool
 }
 
-func (c *testConfig) SigningKey() string        { return c.signingKey }
-func (c *testConfig) Expiration() time.Duration { return c.expiration }
-func (c *testConfig) BaseURL() string           { return c.baseURL }
-func (c *testConfig) QueryKey() string          { return c.queryKey }
-func (c *testConfig) Routes() map[string]string { return c.routes }
-func (c *testConfig) AsQuery() bool             { return c.asQuery }
+func (c *testConfig) GetSigningKey() string        { return c.signingKey }
+func (c *testConfig) GetExpiration() time.Duration { return c.expiration }
+func (c *testConfig) GetBaseURL() string           { return c.baseURL }
+func (c *testConfig) GetQueryKey() string          { return c.queryKey }
+func (c *testConfig) GetRoutes() map[string]string { return c.routes }
+func (c *testConfig) GetAsQuery() bool             { return c.asQuery }
