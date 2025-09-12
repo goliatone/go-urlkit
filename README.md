@@ -271,7 +271,11 @@ url, _ = acme.Builder("settings").WithParam("section", "billing").Build()
 
 ```go
 // Load i18n configuration from JSON
-rm, err := urlkit.NewRouteManagerFromConfigFile("i18n_config.json")
+config, err := loadConfigFromFile("i18n_config.json") // You'll need to implement this helper
+if err != nil {
+    log.Fatal(err)
+}
+rm := urlkit.NewRouteManager(&config)
 
 // English URLs
 enGroup := rm.Group("frontend.en")
