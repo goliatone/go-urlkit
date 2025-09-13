@@ -9,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func TestNewManagerFromConfig(t *testing.T) {
+func TestNewManager(t *testing.T) {
 	cfg := Config{
 		SigningKey: "a-very-secure-key-of-at-least-32-bytes",
 		Expiration: 1 * time.Hour,
@@ -19,13 +19,13 @@ func TestNewManagerFromConfig(t *testing.T) {
 		AsQuery:    false,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	if manager == nil {
-		t.Fatal("NewManagerFromConfig returned nil manager")
+		t.Fatal("NewManager returned nil manager")
 	}
 
 	// Test that the manager has the correct expiration
@@ -34,7 +34,7 @@ func TestNewManagerFromConfig(t *testing.T) {
 	}
 }
 
-func TestNewManagerFromConfigWithSigningMethod(t *testing.T) {
+func TestNewManagerWithSigningMethod(t *testing.T) {
 	cfg := Config{
 		SigningKey:    "a-very-secure-key-of-at-least-48-bytes-for-HS384-algorithm",
 		Expiration:    1 * time.Hour,
@@ -45,17 +45,17 @@ func TestNewManagerFromConfigWithSigningMethod(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS384,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	if manager == nil {
-		t.Fatal("NewManagerFromConfig returned nil manager")
+		t.Fatal("NewManager returned nil manager")
 	}
 }
 
-func TestNewManagerFromConfigDefaultSigningMethod(t *testing.T) {
+func TestNewManagerDefaultSigningMethod(t *testing.T) {
 	cfg := Config{
 		SigningKey: "a-very-secure-key-of-at-least-32-bytes",
 		Expiration: 1 * time.Hour,
@@ -66,13 +66,13 @@ func TestNewManagerFromConfigDefaultSigningMethod(t *testing.T) {
 		// SigningMethod not set, should default to HS256
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	if manager == nil {
-		t.Fatal("NewManagerFromConfig returned nil manager")
+		t.Fatal("NewManager returned nil manager")
 	}
 }
 
@@ -86,14 +86,14 @@ type testConfigurator struct {
 	asQuery    bool
 }
 
-func (tc *testConfigurator) SigningKey() string        { return tc.signingKey }
-func (tc *testConfigurator) Expiration() time.Duration { return tc.expiration }
-func (tc *testConfigurator) BaseURL() string           { return tc.baseURL }
-func (tc *testConfigurator) QueryKey() string          { return tc.queryKey }
-func (tc *testConfigurator) Routes() map[string]string { return tc.routes }
-func (tc *testConfigurator) AsQuery() bool             { return tc.asQuery }
+func (tc *testConfigurator) GetSigningKey() string        { return tc.signingKey }
+func (tc *testConfigurator) GetExpiration() time.Duration { return tc.expiration }
+func (tc *testConfigurator) GetBaseURL() string           { return tc.baseURL }
+func (tc *testConfigurator) GetQueryKey() string          { return tc.queryKey }
+func (tc *testConfigurator) GetRoutes() map[string]string { return tc.routes }
+func (tc *testConfigurator) GetAsQuery() bool             { return tc.asQuery }
 
-func TestNewManagerBackwardCompatibility(t *testing.T) {
+func TestNewManagerFromConfig(t *testing.T) {
 	cfg := &testConfigurator{
 		signingKey: "a-very-secure-key-of-at-least-32-bytes",
 		expiration: 1 * time.Hour,
@@ -103,18 +103,18 @@ func TestNewManagerBackwardCompatibility(t *testing.T) {
 		asQuery:    false,
 	}
 
-	manager, err := NewManager(cfg)
+	manager, err := NewManagerFromConfig(cfg)
 	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
+		t.Fatalf("NewManagerFromConfig failed: %v", err)
 	}
 
 	if manager == nil {
-		t.Fatal("NewManager returned nil manager")
+		t.Fatal("NewManagerFromConfig returned nil manager")
 	}
 
 	// Test that the manager has the correct expiration
-	if manager.GetExpiration() != cfg.Expiration() {
-		t.Errorf("Expected expiration %v, got %v", cfg.Expiration(), manager.GetExpiration())
+	if manager.GetExpiration() != cfg.GetExpiration() {
+		t.Errorf("Expected expiration %v, got %v", cfg.GetExpiration(), manager.GetExpiration())
 	}
 }
 
@@ -130,9 +130,9 @@ func TestDefaultSigningMethodHS256(t *testing.T) {
 		// SigningMethod is nil, should default to HS256
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Test token generation and validation
@@ -191,9 +191,9 @@ func TestCustomSigningMethods(t *testing.T) {
 				SigningMethod: tc.signingMethod,
 			}
 
-			manager, err := NewManagerFromConfig(cfg)
+			manager, err := NewManager(cfg)
 			if err != nil {
-				t.Fatalf("NewManagerFromConfig failed: %v", err)
+				t.Fatalf("NewManager failed: %v", err)
 			}
 
 			// Test token generation and validation
@@ -241,9 +241,9 @@ func TestSigningMethodMismatchValidation(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager256, err := NewManagerFromConfig(cfg256)
+	manager256, err := NewManager(cfg256)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Generate token with HS256
@@ -267,9 +267,9 @@ func TestSigningMethodMismatchValidation(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS384,
 	}
 
-	manager384, err := NewManagerFromConfig(cfg384)
+	manager384, err := NewManager(cfg384)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Try to validate HS256 token with HS384 manager (should fail)
@@ -310,9 +310,9 @@ func TestValidationRejectsShortKeys(t *testing.T) {
 				SigningMethod: tc.signingMethod,
 			}
 
-			_, err := NewManagerFromConfig(cfg)
+			_, err := NewManager(cfg)
 			if err == nil {
-				t.Fatal("Expected NewManagerFromConfig to fail with short key, but it succeeded")
+				t.Fatal("Expected NewManager to fail with short key, but it succeeded")
 			}
 
 			if !strings.Contains(err.Error(), tc.expectedError) {
@@ -356,13 +356,13 @@ func TestValidationAcceptsValidKeys(t *testing.T) {
 				SigningMethod: tc.signingMethod,
 			}
 
-			manager, err := NewManagerFromConfig(cfg)
+			manager, err := NewManager(cfg)
 			if err != nil {
-				t.Fatalf("NewManagerFromConfig failed with valid key: %v", err)
+				t.Fatalf("NewManager failed with valid key: %v", err)
 			}
 
 			if manager == nil {
-				t.Fatal("NewManagerFromConfig returned nil manager with valid key")
+				t.Fatal("NewManager returned nil manager with valid key")
 			}
 		})
 	}
@@ -384,7 +384,7 @@ func TestDifferentKeyLengthsForAlgorithms(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	_, err := NewManagerFromConfig(cfgHS256)
+	_, err := NewManager(cfgHS256)
 	if err != nil {
 		t.Fatalf("HS256 should accept 32-byte key: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestDifferentKeyLengthsForAlgorithms(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS384,
 	}
 
-	_, err = NewManagerFromConfig(cfgHS384)
+	_, err = NewManager(cfgHS384)
 	if err == nil {
 		t.Fatal("HS384 should reject 32-byte key")
 	}
@@ -416,7 +416,7 @@ func TestDifferentKeyLengthsForAlgorithms(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS512,
 	}
 
-	_, err = NewManagerFromConfig(cfgHS512)
+	_, err = NewManager(cfgHS512)
 	if err == nil {
 		t.Fatal("HS512 should reject 32-byte key")
 	}
@@ -436,7 +436,7 @@ func TestErrorMessagesAreDescriptive(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	_, err := NewManagerFromConfig(cfg)
+	_, err := NewManager(cfg)
 	if err == nil {
 		t.Fatal("Expected error with short key")
 	}
@@ -459,8 +459,8 @@ func TestErrorMessagesAreDescriptive(t *testing.T) {
 	}
 }
 
-// Test that backward compatibility through NewManager also validates keys
-func TestBackwardCompatibilityValidatesKeys(t *testing.T) {
+// Test that configurator pattern also validates keys
+func TestConfiguratorValidatesKeys(t *testing.T) {
 	cfg := &testConfigurator{
 		signingKey: "short", // Too short (5 bytes, need 32 for HS256)
 		expiration: 1 * time.Hour,
@@ -470,9 +470,9 @@ func TestBackwardCompatibilityValidatesKeys(t *testing.T) {
 		asQuery:    false,
 	}
 
-	_, err := NewManager(cfg)
+	_, err := NewManagerFromConfig(cfg)
 	if err == nil {
-		t.Fatal("Expected NewManager to fail with short key")
+		t.Fatal("Expected NewManagerFromConfig to fail with short key")
 	}
 
 	if !strings.Contains(err.Error(), "signing key too short") {
@@ -494,9 +494,9 @@ func TestErrorMessagesDontContainSensitiveInfo(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Test with invalid token
@@ -558,7 +558,7 @@ func TestErrorContextsAreHelpful(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewManagerFromConfig(tc.cfg)
+			_, err := NewManager(tc.cfg)
 			if err == nil {
 				t.Fatal("Expected error but got none")
 			}
@@ -585,9 +585,9 @@ func TestRouteErrorContext(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Try to generate with unknown route
@@ -622,9 +622,9 @@ func TestJWTGenerationErrorHandling(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Test normal generation works (no error case to test signing failure easily)
@@ -658,9 +658,9 @@ func TestGenerateWithNoPayload(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Generate with no payload
@@ -703,9 +703,9 @@ func TestGenerateWithSinglePayload(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Generate with single payload
@@ -752,9 +752,9 @@ func TestGenerateWithMultiplePayloads(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	// Generate with multiple payloads
@@ -811,9 +811,9 @@ func TestThreadSafetyGenerate(t *testing.T) {
 		SigningMethod: jwt.SigningMethodHS256,
 	}
 
-	manager, err := NewManagerFromConfig(cfg)
+	manager, err := NewManager(cfg)
 	if err != nil {
-		t.Fatalf("NewManagerFromConfig failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 
 	const numGoroutines = 50
@@ -965,9 +965,9 @@ func TestManagerIntegrationPassesSigningMethodCorrectly(t *testing.T) {
 				SigningMethod: tc.signingMethod,
 			}
 
-			manager, err := NewManagerFromConfig(cfg)
+			manager, err := NewManager(cfg)
 			if err != nil {
-				t.Fatalf("NewManagerFromConfig failed: %v", err)
+				t.Fatalf("NewManager failed: %v", err)
 			}
 
 			// Generate token through manager

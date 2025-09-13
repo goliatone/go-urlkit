@@ -84,7 +84,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(config)
+	manager := urlkit.NewRouteManager(&config)
 
 	// Test English company about page
 	enAboutURL, err := manager.Group("frontend").Group("en").Group("company").Builder("about").Build()

@@ -25,7 +25,7 @@
 //		AsQuery:       false,                                         // false=path-based, true=query-based URLs
 //		SigningMethod: jwt.SigningMethodHS256,                        // Optional: defaults to HS256
 //	}
-//	manager, err := securelink.NewManagerFromConfig(cfg)
+//	manager, err := securelink.NewManager(cfg)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -45,9 +45,9 @@
 //	}
 //	userID := validatedPayload["user_id"] // "123"
 //
-// ## 2. Configurator Interface (Legacy compatibility)
+// ## 2. Configurator Interface (For generated configurations)
 //
-//	manager, err := securelink.NewManager(cfg) // where cfg implements Configurator
+//	manager, err := securelink.NewManagerFromConfig(cfg) // where cfg implements Configurator
 //
 // # Security Best Practices
 //
@@ -104,14 +104,14 @@ type manager struct {
 
 // Configurator holds configuration options for backward compatibility with the legacy API.
 // This interface is maintained for existing code that implements these methods.
-// For new code, prefer using the Config struct directly with NewManagerFromConfig.
+// For new code, prefer using the Config struct directly with NewManager.
 type Configurator interface {
-	SigningKey() string        // The secret key used for JWT signing (min 32 bytes for HS256)
-	Expiration() time.Duration // How long tokens remain valid
-	BaseURL() string           // Base URL for generated links
-	QueryKey() string          // Query parameter name when AsQuery() is true
-	Routes() map[string]string // Map of route names to URL paths
-	AsQuery() bool             // Whether to embed token as query param (true) or path segment (false)
+	GetSigningKey() string        // The secret key used for JWT signing (min 32 bytes for HS256)
+	GetExpiration() time.Duration // How long tokens remain valid
+	GetBaseURL() string           // Base URL for generated links
+	GetQueryKey() string          // Query parameter name when GetAsQuery() is true
+	GetRoutes() map[string]string // Map of route names to URL paths
+	GetAsQuery() bool             // Whether to embed token as query param (true) or path segment (false)
 }
 
 // Config is a struct-based configuration for simplified direct instantiation.
@@ -136,6 +136,36 @@ type Config struct {
 	Routes        map[string]string // Map of route names to URL paths (e.g., {"reset": "/auth/reset"})
 	AsQuery       bool              // false=path URLs (/path/{token}), true=query URLs (/path?key={token})
 	SigningMethod jwt.SigningMethod // JWT algorithm (HS256, HS384, HS512). Defaults to HS256 if nil
+}
+
+// GetSigningKey implements the Configurator interface for the Config struct.
+func (c Config) GetSigningKey() string {
+	return c.SigningKey
+}
+
+// GetExpiration implements the Configurator interface for the Config struct.
+func (c Config) GetExpiration() time.Duration {
+	return c.Expiration
+}
+
+// GetBaseURL implements the Configurator interface for the Config struct.
+func (c Config) GetBaseURL() string {
+	return c.BaseURL
+}
+
+// GetQueryKey implements the Configurator interface for the Config struct.
+func (c Config) GetQueryKey() string {
+	return c.QueryKey
+}
+
+// GetRoutes implements the Configurator interface for the Config struct.
+func (c Config) GetRoutes() map[string]string {
+	return c.Routes
+}
+
+// GetAsQuery implements the Configurator interface for the Config struct.
+func (c Config) GetAsQuery() bool {
+	return c.AsQuery
 }
 
 // Payload represents custom data that can be embedded in secure links.
@@ -266,7 +296,7 @@ func validateSigningKey(key string, method jwt.SigningMethod) error {
 	return nil
 }
 
-// NewManagerFromConfig creates a new secure link manager from a Config struct.
+// NewManager creates a new secure link manager from a Config struct.
 // This is the recommended constructor for new code as it provides direct configuration
 // without requiring interface implementations.
 //
@@ -292,8 +322,8 @@ func validateSigningKey(key string, method jwt.SigningMethod) error {
 //	    BaseURL:    "https://api.myapp.com",
 //	    Routes:     map[string]string{"verify": "/auth/verify"},
 //	}
-//	manager, err := securelink.NewManagerFromConfig(cfg)
-func NewManagerFromConfig(cfg Config) (Manager, error) {
+//	manager, err := securelink.NewManager(cfg)
+func NewManager(cfg Config) (Manager, error) {
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid BaseURL configuration: %w", err)
@@ -322,12 +352,9 @@ func NewManagerFromConfig(cfg Config) (Manager, error) {
 	}, nil
 }
 
-// NewManager creates a manager instance using the Configurator interface.
-// This constructor is maintained for backward compatibility with existing code
-// that implements the Configurator interface.
-//
-// For new code, prefer NewManagerFromConfig which provides direct configuration
-// without requiring interface implementations.
+// NewManagerFromConfig creates a manager instance using the Configurator interface.
+// This constructor follows the configurator pattern used throughout the application
+// and allows for flexible configuration implementations that can be generated automatically.
 //
 // Parameters:
 //
@@ -342,19 +369,19 @@ func NewManagerFromConfig(cfg Config) (Manager, error) {
 //
 //	type MyConfig struct { /* implement Configurator methods */ }
 //	config := &MyConfig{...}
-//	manager, err := securelink.NewManager(config)
-func NewManager(cfg Configurator) (Manager, error) {
-	// Convert Configurator interface to Config struct and delegate to NewManagerFromConfig
+//	manager, err := securelink.NewManagerFromConfig(config)
+func NewManagerFromConfig(cfg Configurator) (Manager, error) {
+	// Convert Configurator interface to Config struct and delegate to NewManager
 	config := Config{
-		SigningKey:    cfg.SigningKey(),
-		Expiration:    cfg.Expiration(),
-		BaseURL:       cfg.BaseURL(),
-		QueryKey:      cfg.QueryKey(),
-		Routes:        cfg.Routes(),
-		AsQuery:       cfg.AsQuery(),
-		SigningMethod: nil, // Will default to HS256 in NewManagerFromConfig
+		SigningKey:    cfg.GetSigningKey(),
+		Expiration:    cfg.GetExpiration(),
+		BaseURL:       cfg.GetBaseURL(),
+		QueryKey:      cfg.GetQueryKey(),
+		Routes:        cfg.GetRoutes(),
+		AsQuery:       cfg.GetAsQuery(),
+		SigningMethod: nil, // Will default to HS256 in NewManager
 	}
-	return NewManagerFromConfig(config)
+	return NewManager(config)
 }
 
 func (m *manager) Generate(route string, payloads ...Payload) (string, error) {
@@ -426,7 +453,7 @@ func (m *manager) Validate(token string) (map[string]any, error) {
 //	string: Signed JWT token
 //	error: Token generation failures (invalid key, signing errors)
 //
-// Security note: This function does not validate key length. Use NewManagerFromConfig
+// Security note: This function does not validate key length. Use NewManager
 // for automatic key validation.
 func Generate(data map[string]any, signingKey string, expiration time.Duration, signingMethod jwt.SigningMethod) (string, error) {
 	// Ensure data is not nil to prevent validation issues

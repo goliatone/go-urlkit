@@ -67,25 +67,25 @@ type GroupConfig struct {
 	TemplateVars map[string]string `json:"template_vars,omitempty"`
 }
 
-func NewRouteManagerFromConfig(config Config) *RouteManager {
-	manager := NewRouteManager()
-	for _, groupConfig := range config.Groups {
-		manager.RegisterGroup(groupConfig.Name, groupConfig.BaseURL, groupConfig.Paths)
-		rootGroup := manager.Group(groupConfig.Name)
+// Configurator defines the interface for route manager configuration.
+// This interface follows the Config Getters pattern and allows for flexible
+// configuration implementations that can be generated automatically.
+type Configurator interface {
+	GetGroups() []GroupConfig
+}
 
-		// Set URL template if provided
-		if groupConfig.URLTemplate != "" {
-			rootGroup.SetURLTemplate(groupConfig.URLTemplate)
-		}
+// GetGroups implements the Configurator interface for the Config struct.
+func (c Config) GetGroups() []GroupConfig {
+	return c.Groups
+}
 
-		// Set template variables if provided
-		for key, value := range groupConfig.TemplateVars {
-			rootGroup.SetTemplateVar(key, value)
-		}
-
-		manager.parseNestedGroups(groupConfig, rootGroup)
+// NewRouteManagerFromConfig creates a new RouteManager from a Configurator.
+// This follows the configurator pattern used throughout the application.
+func NewRouteManagerFromConfig(config Configurator) *RouteManager {
+	cfg := &Config{
+		Groups: config.GetGroups(),
 	}
-	return manager
+	return NewRouteManager(cfg)
 }
 
 // parseNestedGroups recursively processes nested groups in the configuration
@@ -111,10 +111,32 @@ func (m *RouteManager) parseNestedGroups(config GroupConfig, parent *Group) {
 	}
 }
 
-func NewRouteManager() *RouteManager {
-	return &RouteManager{
+func NewRouteManager(config ...*Config) *RouteManager {
+	manager := &RouteManager{
 		groups: map[string]*Group{},
 	}
+
+	// If config is provided, process it
+	if len(config) > 0 && config[0] != nil {
+		for _, groupConfig := range config[0].Groups {
+			manager.RegisterGroup(groupConfig.Name, groupConfig.BaseURL, groupConfig.Paths)
+			rootGroup := manager.Group(groupConfig.Name)
+
+			// Set URL template if provided
+			if groupConfig.URLTemplate != "" {
+				rootGroup.SetURLTemplate(groupConfig.URLTemplate)
+			}
+
+			// Set template variables if provided
+			for key, value := range groupConfig.TemplateVars {
+				rootGroup.SetTemplateVar(key, value)
+			}
+
+			manager.parseNestedGroups(groupConfig, rootGroup)
+		}
+	}
+
+	return manager
 }
 
 func (m *RouteManager) RegisterGroup(name, baseURL string, routes map[string]string) *RouteManager {

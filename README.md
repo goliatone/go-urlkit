@@ -271,7 +271,11 @@ url, _ = acme.Builder("settings").WithParam("section", "billing").Build()
 
 ```go
 // Load i18n configuration from JSON
-rm, err := urlkit.NewRouteManagerFromConfigFile("i18n_config.json")
+config, err := loadConfigFromFile("i18n_config.json") // You'll need to implement this helper
+if err != nil {
+    log.Fatal(err)
+}
+rm := urlkit.NewRouteManager(&config)
 
 // English URLs
 enGroup := rm.Group("frontend.en")
@@ -292,6 +296,194 @@ aboutES, _ := esGroup.Builder("about").Build()
 - **JSON Configuration**: Load complex template configurations from JSON files
 
 See [examples/](examples/) for comprehensive template usage examples.
+
+## Template Helpers
+
+The library provides template helper functions that integrate seamlessly with Go template engines like [go-template](https://github.com/goliatone/go-template), enabling clean URL generation directly in templates.
+
+### Basic Setup
+
+```go
+import (
+    "github.com/goliatone/go-template"
+    "github.com/goliatone/go-urlkit"
+)
+
+func main() {
+    // Setup URLKit with routes
+    manager := urlkit.NewRouteManager()
+    manager.RegisterGroup("frontend", "https://example.com", map[string]string{
+        "home":         "/",
+        "user_profile": "/users/:id/profile",
+        "contact":      "/contact",
+    })
+
+    // Create template renderer with URLKit helpers
+    renderer, err := template.NewRenderer(
+        template.WithBaseDir("./templates"),
+        template.WithTemplateFunc(urlkit.TemplateHelpers(manager, nil)),
+    )
+    if err != nil {
+        panic(err)
+    }
+}
+```
+
+### Template Helper Functions
+
+#### `url(group, route, [params], [query])`
+Generate complete URLs with optional path parameters and query strings:
+
+```html
+<!-- Simple URL -->
+<a href="{{ url('frontend', 'home') }}">Home</a>
+<!-- Result: https://example.com/ -->
+
+<!-- With path parameters -->
+<a href="{{ url('frontend', 'user_profile', {'id': user.id}) }}">Profile</a>
+<!-- Result: https://example.com/users/123/profile -->
+
+<!-- With query strings -->
+<a href="{{ url('api', 'users', {}, {'page': 1, 'limit': 10}) }}">Users API</a>
+<!-- Result: https://api.example.com/users?page=1&limit=10 -->
+
+<!-- With both parameters and query strings -->
+<a href="{{ url('api', 'user_posts', {'id': 1}, {'sort': 'date'}) }}">Posts</a>
+<!-- Result: https://api.example.com/users/1/posts?sort=date -->
+```
+
+#### `route_path(group, route, [params], [query])`
+Generate path and query portion only (for JavaScript/AJAX usage):
+
+```html
+<script>
+const apiPath = "{{ route_path('api', 'users', {'id': 123}, {'format': 'json'}) }}";
+// Result: /api/users/123?format=json
+</script>
+```
+
+#### `has_route(group, route)`
+Check if a route exists for conditional rendering:
+
+```html
+{% if has_route('admin', 'dashboard') %}
+    <a href="{{ url('admin', 'dashboard') }}">Admin Panel</a>
+{% endif %}
+```
+
+#### `route_template(group, route)`
+Get the raw route template for debugging:
+
+```html
+<!-- Shows: "/users/:id/profile" -->
+<div>Route template: {{ route_template('frontend', 'user_profile') }}</div>
+```
+
+### Contextual Features
+
+Template helpers support contextual features like navigation active states and URL rebuilding by accessing template variables. These context variables are typically provided by middleware that injects routing information into your template data.
+
+#### Context Variables
+
+Your application should provide the following template variables:
+
+- `current_route_name`: Current route identifier (e.g., "frontend.user_profile")
+- `current_params`: Current URL path parameters (e.g., {"id": "123"})
+- `current_query`: Current query parameters (e.g., {"page": "2"})
+
+#### Integration with go-router
+
+If you're using [go-router](https://github.com/goliatone/go-router), the `routecontext` middleware automatically provides these variables. The middleware can be configured to export them either as top-level template variables or nested under a configurable map key:
+
+```go
+// Default configuration exports as top-level variables:
+// current_route_name, current_params, current_query
+middleware.RouteContext(middleware.RouteContextConfig{
+    ExportAsMap: false, // Export as individual template variables
+})
+
+// Or export under a template_context map:
+middleware.RouteContext(middleware.RouteContextConfig{
+    ExportAsMap: true,
+    MapKey: "template_context", // Variables nested under {{ template_context.current_route_name }}
+})
+```
+
+#### Navigation Active States
+
+```html
+<nav>
+    <a href="{{ url('frontend', 'home') }}"
+       class="{{ current_route_if('frontend.home', current_route_name, 'active') }}">
+        Home
+    </a>
+    <a href="{{ url('frontend', 'profile') }}"
+       class="{{ current_route_if('frontend.profile', current_route_name, 'active', 'inactive') }}">
+        Profile
+    </a>
+</nav>
+```
+
+#### URL Rebuilding with Modified Query Parameters
+
+```html
+<!-- Current URL: /products?category=electronics&page=2 -->
+<thead>
+    <tr>
+        <th>
+            <a href="{{ url('frontend', current_route_name, current_params, current_query|merge({'sort': 'name'})) }}">
+                Product Name
+            </a>
+        </th>
+    </tr>
+</thead>
+<!-- Result: /products?category=electronics&page=2&sort=name -->
+```
+
+#### Pagination Controls
+
+```html
+<div class="pagination">
+    <a href="{{ url('frontend', current_route_name, current_params, current_query|merge({'page': current_query.page|int - 1})) }}">
+        Previous
+    </a>
+    <a href="{{ url('frontend', current_route_name, current_params, current_query|merge({'page': current_query.page|int + 1})) }}">
+        Next
+    </a>
+</div>
+```
+
+#### Current Route Detection
+
+```html
+<!-- Access current route directly -->
+<body data-route="{{ current_route_name }}">
+
+<!-- Conditional content based on current route -->
+{% if current_route_name == 'frontend.user_profile' %}
+    <div class="profile-actions">
+        <a href="{{ url('frontend', 'edit_profile', current_params) }}">Edit Profile</a>
+    </div>
+{% endif %}
+```
+
+### Template Data Integration
+
+When rendering templates, merge the contextual data with your template variables:
+
+```go
+func renderTemplate(w http.ResponseWriter, r *http.Request, templateName string, data map[string]any) {
+    // Add contextual data from your routing system
+    data["current_route_name"] = "frontend.user_profile"
+    data["current_params"] = map[string]any{"id": "123"}
+    data["current_query"] = map[string]string{"tab": "profile"}
+
+    // Render template
+    renderer.ExecuteTemplate(w, templateName, data)
+}
+```
+
+The template helpers automatically handle parameter conversion, error handling, and URL encoding, providing a robust foundation for template-based URL generation.
 
 ### URL Joining Utility
 
