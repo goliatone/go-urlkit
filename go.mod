@@ -5,6 +5,7 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
+	github.com/flosch/pongo2 v0.0.0-20200913210552-0d938eb266f3
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/soongo/path-to-regexp v1.6.4
