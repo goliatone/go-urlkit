@@ -1576,10 +1576,6 @@ func TestCoreHelperErrorCases(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// CONTEXTUAL FEATURES TESTS (Phase 5, Task 5.3)
-// =============================================================================
-
 // TestCurrentRouteIfHelperContextualScenarios tests the current_route_if helper
 // with various route matching scenarios that simulate real-world usage patterns
 func TestCurrentRouteIfHelperContextualScenarios(t *testing.T) {

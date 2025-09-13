@@ -1602,7 +1602,7 @@ func ExampleRouteManager_validationWithDotSeparatedPaths() {
 	// Expected validation failure occurred (order may vary): true
 }
 
-// Unit Tests for Template Logic (Task 5.1)
+// Unit Tests for Template Logic
 
 func TestTemplateVariableCollectionAndInheritance(t *testing.T) {
 	// Test template variable collection and inheritance behavior
@@ -1900,7 +1900,7 @@ func TestNewGroupMethods(t *testing.T) {
 	}
 }
 
-// Integration Tests for Template Logic (Task 5.2)
+// Integration Tests for Template Logic
 
 func TestFullURLBuildingWithTemplatesProgrammaticAPI(t *testing.T) {
 	// Test full URL building with templates using programmatic API
@@ -2319,7 +2319,7 @@ func TestVariableOverrideBehavior(t *testing.T) {
 	}
 }
 
-// Backward Compatibility Tests (Task 5.3)
+// Backward Compatibility Tests
 
 func TestExistingFunctionalityWorksUnchanged(t *testing.T) {
 	// Test that existing functionality works exactly as before when no templates are used
