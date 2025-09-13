@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/flosch/pongo2/v6"
 )
@@ -495,10 +496,13 @@ func TemplateHelpers(manager *RouteManager, config *TemplateHelperConfig) map[st
 		config = DefaultTemplateHelperConfig()
 	}
 
+	// Create a shared group cache for all helpers to reduce lookup overhead
+	groupCache := NewGroupCache(manager)
+
 	helpers := make(map[string]any)
 
-	// Core URL helpers (wrapped with panic recovery)
-	helpers["url"] = safeTemplateHelper("url", config, urlHelper(manager, config))
+	// Core URL helpers (wrapped with panic recovery and using optimizations)
+	helpers["url"] = safeTemplateHelper("url", config, urlHelperWithCache(groupCache, config))
 	helpers["route_path"] = safeTemplateHelper("route_path", config, routePathHelper(manager, config))
 	helpers["has_route"] = safeTemplateHelper("has_route", config, hasRouteHelper(manager, config))
 	helpers["route_template"] = safeTemplateHelper("route_template", config, routeTemplateHelper(manager, config))
@@ -584,6 +588,54 @@ func formatError(helper, errorType, message string, context map[string]any, conf
 	return pongo2.AsValue(errorMsg)
 }
 
+// GroupCache provides simple caching for frequently accessed groups
+// This reduces the overhead of repeated group lookups in template helpers
+type GroupCache struct {
+	cache   map[string]*Group
+	manager *RouteManager
+	mutex   sync.RWMutex
+}
+
+// NewGroupCache creates a new group cache
+func NewGroupCache(manager *RouteManager) *GroupCache {
+	return &GroupCache{
+		cache:   make(map[string]*Group),
+		manager: manager,
+	}
+}
+
+// Get retrieves a group from cache or fetches it from the manager
+func (gc *GroupCache) Get(groupName string) *Group {
+	// Try read lock first for cache hit
+	gc.mutex.RLock()
+	if group, exists := gc.cache[groupName]; exists {
+		gc.mutex.RUnlock()
+		return group
+	}
+	gc.mutex.RUnlock()
+
+	// Need to fetch from manager, acquire write lock
+	gc.mutex.Lock()
+	defer gc.mutex.Unlock()
+
+	// Double-check cache after acquiring write lock (another goroutine might have populated it)
+	if group, exists := gc.cache[groupName]; exists {
+		return group
+	}
+
+	// Fetch from manager and cache result (including nil results)
+	group := safeGroupAccess(gc.manager, groupName)
+	gc.cache[groupName] = group
+	return group
+}
+
+// Clear clears the cache (useful for testing or when routes change)
+func (gc *GroupCache) Clear() {
+	gc.mutex.Lock()
+	defer gc.mutex.Unlock()
+	gc.cache = make(map[string]*Group)
+}
+
 // safeGroupAccess safely accesses a group without panicking
 func safeGroupAccess(manager *RouteManager, groupName string) *Group {
 	defer func() {
@@ -631,17 +683,19 @@ type urlHelperArgs struct {
 }
 
 // parseArgs parses variadic pongo2.Value arguments into structured data
+// Optimized version that avoids unnecessary allocations for common cases
 func parseArgs(args ...*pongo2.Value) (*urlHelperArgs, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("at least 2 arguments required: group and route")
 	}
 
-	result := &urlHelperArgs{
-		Params: make(map[string]any),
-		Query:  make(map[string]string),
-	}
+	// Pre-allocate result with likely sizes to reduce allocations
+	result := &urlHelperArgs{}
 
-	// First argument: group name
+	// First argument: group name (direct string access for common case)
+	if args[0] == nil {
+		return nil, fmt.Errorf("group cannot be nil")
+	}
 	groupVal := fromPongoValue(args[0])
 	if group, ok := groupVal.(string); ok {
 		result.Group = group
@@ -649,7 +703,10 @@ func parseArgs(args ...*pongo2.Value) (*urlHelperArgs, error) {
 		return nil, fmt.Errorf("group must be a string")
 	}
 
-	// Second argument: route name
+	// Second argument: route name (direct string access for common case)
+	if args[1] == nil {
+		return nil, fmt.Errorf("route cannot be nil")
+	}
 	routeVal := fromPongoValue(args[1])
 	if route, ok := routeVal.(string); ok {
 		result.Route = route
@@ -657,21 +714,32 @@ func parseArgs(args ...*pongo2.Value) (*urlHelperArgs, error) {
 		return nil, fmt.Errorf("route must be a string")
 	}
 
-	// Optional third argument: params map
+	// Only allocate maps if we actually have arguments for them
+	var hasParams, hasQuery bool
 	if len(args) > 2 && args[2] != nil {
+		hasParams = true
+	}
+	if len(args) > 3 && args[3] != nil {
+		hasQuery = true
+	}
+
+	// Allocate params map only if needed
+	if hasParams {
 		paramsVal := fromPongoValue(args[2])
 		if params, ok := paramsVal.(map[string]any); ok {
-			result.Params = params
+			result.Params = params // Use existing map to avoid copy
 		} else if paramsVal != nil {
 			return nil, fmt.Errorf("params must be a map")
 		}
 	}
 
-	// Optional fourth argument: query map
-	if len(args) > 3 && args[3] != nil {
+	// Allocate query map only if needed
+	if hasQuery {
 		queryVal := fromPongoValue(args[3])
 		if queryMap, ok := queryVal.(map[string]any); ok {
-			// Convert to map[string]string
+			// Pre-allocate with known size
+			result.Query = make(map[string]string, len(queryMap))
+			// Convert to map[string]string efficiently
 			for k, v := range queryMap {
 				if str, ok := v.(string); ok {
 					result.Query[k] = str
@@ -684,10 +752,19 @@ func parseArgs(args ...*pongo2.Value) (*urlHelperArgs, error) {
 		}
 	}
 
+	// Initialize empty maps only if they weren't set above
+	if result.Params == nil {
+		result.Params = make(map[string]any)
+	}
+	if result.Query == nil {
+		result.Query = make(map[string]string)
+	}
+
 	return result, nil
 }
 
 // fromPongoValue recursively converts pongo2.Value to Go native types
+// Optimized version that avoids reflection for common cases
 func fromPongoValue(val *pongo2.Value) any {
 	if val == nil {
 		return nil
@@ -699,7 +776,7 @@ func fromPongoValue(val *pongo2.Value) any {
 		return nil
 	}
 
-	// Handle different types
+	// Fast path for most common types (avoids reflect.ValueOf allocation)
 	switch v := iface.(type) {
 	case string:
 		return v
@@ -707,46 +784,148 @@ func fromPongoValue(val *pongo2.Value) any {
 		return v
 	case int64:
 		return int(v)
+	case int32:
+		return int(v)
+	case int16:
+		return int(v)
+	case int8:
+		return int(v)
+	case uint:
+		return int(v)
+	case uint64:
+		return int(v)
+	case uint32:
+		return int(v)
+	case uint16:
+		return int(v)
+	case uint8:
+		return int(v)
 	case float64:
 		return v
+	case float32:
+		return float64(v)
 	case bool:
 		return v
 	case map[string]any:
 		return v
 	case []any:
 		return v
-	default:
-		// Try to convert using reflection for other types
-		rv := reflect.ValueOf(iface)
-		switch rv.Kind() {
-		case reflect.String:
-			return rv.String()
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			return int(rv.Int())
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return int(rv.Uint())
-		case reflect.Float32, reflect.Float64:
-			return rv.Float()
-		case reflect.Bool:
-			return rv.Bool()
-		case reflect.Map:
-			if rv.Type().Key().Kind() == reflect.String {
-				result := make(map[string]any)
-				for _, key := range rv.MapKeys() {
-					keyStr := key.String()
-					value := rv.MapIndex(key).Interface()
-					result[keyStr] = value
-				}
-				return result
-			}
+	case []string:
+		// Common case for string arrays
+		result := make([]any, len(v))
+		for i, s := range v {
+			result[i] = s
 		}
-
-		// Fallback to string representation
-		return fmt.Sprintf("%v", iface)
+		return result
+	case []int:
+		// Common case for int arrays
+		result := make([]any, len(v))
+		for i, n := range v {
+			result[i] = n
+		}
+		return result
+	default:
+		// Slower path using reflection only for uncommon types
+		return fromPongoValueReflection(iface)
 	}
 }
 
-// urlHelper returns a template function that generates complete URLs
+// fromPongoValueReflection handles complex types using reflection
+// Separated to keep the hot path optimized
+func fromPongoValueReflection(iface any) any {
+	rv := reflect.ValueOf(iface)
+	switch rv.Kind() {
+	case reflect.String:
+		return rv.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint())
+	case reflect.Float32, reflect.Float64:
+		return rv.Float()
+	case reflect.Bool:
+		return rv.Bool()
+	case reflect.Map:
+		if rv.Type().Key().Kind() == reflect.String {
+			result := make(map[string]any, rv.Len()) // Pre-allocate with known size
+			for _, key := range rv.MapKeys() {
+				keyStr := key.String()
+				value := rv.MapIndex(key).Interface()
+				result[keyStr] = value
+			}
+			return result
+		}
+	case reflect.Slice, reflect.Array:
+		length := rv.Len()
+		result := make([]any, length) // Pre-allocate with known size
+		for i := 0; i < length; i++ {
+			result[i] = rv.Index(i).Interface()
+		}
+		return result
+	}
+
+	// Fallback to string representation
+	return fmt.Sprintf("%v", iface)
+}
+
+// urlHelperWithCache returns a template function that generates complete URLs using group cache
+func urlHelperWithCache(groupCache *GroupCache, config *TemplateHelperConfig) func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	return func(args ...*pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+		parsedArgs, err := parseArgs(args...)
+		if err != nil {
+			return formatError("url", "parse_error", err.Error(), map[string]any{"args_count": len(args)}, config), nil
+		}
+
+		// Get the group from cache
+		group := groupCache.Get(parsedArgs.Group)
+		if group == nil {
+			context := map[string]any{
+				"group_name": parsedArgs.Group,
+			}
+			return formatError("url", "group_not_found", fmt.Sprintf("group '%s' not found", parsedArgs.Group), context, config), nil
+		}
+
+		// Build the URL using the fluent API
+		builder := group.Builder(parsedArgs.Route)
+		if builder == nil {
+			context := map[string]any{
+				"route_name": parsedArgs.Route,
+				"group_name": parsedArgs.Group,
+			}
+			return formatError("url", "route_not_found", fmt.Sprintf("route '%s' not found in group '%s'", parsedArgs.Route, parsedArgs.Group), context, config), nil
+		}
+
+		// Add parameters if provided
+		if len(parsedArgs.Params) > 0 {
+			for key, value := range parsedArgs.Params {
+				builder = builder.WithParam(key, value)
+			}
+		}
+
+		// Add query parameters if provided
+		if len(parsedArgs.Query) > 0 {
+			for key, value := range parsedArgs.Query {
+				builder = builder.WithQuery(key, value)
+			}
+		}
+
+		// Build the final URL
+		url, err := builder.Build()
+		if err != nil {
+			context := map[string]any{
+				"route_name": parsedArgs.Route,
+				"group_name": parsedArgs.Group,
+				"params":     parsedArgs.Params,
+				"query":      parsedArgs.Query,
+			}
+			return formatError("url", "build_error", err.Error(), context, config), nil
+		}
+
+		return pongo2.AsValue(url), nil
+	}
+}
+
+// urlHelper returns a template function that generates complete URLs (legacy version for compatibility)
 func urlHelper(manager *RouteManager, config *TemplateHelperConfig) func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error) {
 	return func(args ...*pongo2.Value) (*pongo2.Value, *pongo2.Error) {
 		parsedArgs, err := parseArgs(args...)
