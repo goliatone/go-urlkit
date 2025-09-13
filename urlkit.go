@@ -68,7 +68,7 @@ type GroupConfig struct {
 }
 
 // Configurator defines the interface for route manager configuration.
-// This interface follows the Config Getters pattern and allows for flexible 
+// This interface follows the Config Getters pattern and allows for flexible
 // configuration implementations that can be generated automatically.
 type Configurator interface {
 	GetGroups() []GroupConfig
