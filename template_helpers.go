@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/flosch/pongo2"
+	"github.com/flosch/pongo2/v6"
 )
 
 // TemplateHelperConfig defines configuration for template helpers
@@ -878,15 +878,16 @@ func hasRouteHelper(manager *RouteManager, _ *TemplateHelperConfig) func(...*pon
 			return pongo2.AsValue(false), nil
 		}
 
-		// Check if group exists
-		group := manager.Group(groupName)
+		// Check if group exists safely
+		group := safeGroupAccess(manager, groupName)
 		if group == nil {
 			return pongo2.AsValue(false), nil
 		}
 
 		// Check if route exists in group
-		builder := group.Builder(routeName)
-		exists := builder != nil
+		// Use Route method instead of Builder to avoid potential panic
+		_, err := group.Route(routeName)
+		exists := err == nil
 
 		return pongo2.AsValue(exists), nil
 	}
@@ -989,15 +990,8 @@ func routeExistsHelper(manager *RouteManager, _ *TemplateHelperConfig) func(...*
 			return pongo2.AsValue(false), nil
 		}
 
-		// Check if group exists without panic by using the groups map directly
-		// We need to implement this safely, so let's check the group exists by trying to access it
-		defer func() {
-			if r := recover(); r != nil {
-				// Group doesn't exist, handled in the defer
-			}
-		}()
-
-		group := manager.Group(groupName)
+		// Check if group exists safely
+		group := safeGroupAccess(manager, groupName)
 		exists := group != nil
 
 		return pongo2.AsValue(exists), nil
