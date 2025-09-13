@@ -161,12 +161,12 @@ func TestSecurityURLParameterEscaping(t *testing.T) {
 // TestSecurityTemplateInjectionPrevention tests prevention of template injection
 func TestSecurityTemplateInjectionPrevention(t *testing.T) {
 	tests := []struct {
-		name         string
-		groupName    string
-		routeName    string
-		params       map[string]any
-		expectError  bool
-		description  string
+		name        string
+		groupName   string
+		routeName   string
+		params      map[string]any
+		expectError bool
+		description string
 	}{
 		{
 			name:        "Template injection in group name",
@@ -197,7 +197,7 @@ func TestSecurityTemplateInjectionPrevention(t *testing.T) {
 		{
 			name:      "Normal parameters work",
 			groupName: "test",
-			routeName: "item", 
+			routeName: "item",
 			params: map[string]any{
 				"id": "123",
 			},
@@ -260,7 +260,7 @@ func TestSecurityTemplateInjectionPrevention(t *testing.T) {
 
 			// Ensure template syntax is properly encoded in URLs
 			if strings.Contains(tt.params["id"].(string), "{{") {
-				// Template braces should be encoded in URL parameters  
+				// Template braces should be encoded in URL parameters
 				if strings.Contains(resultURL, "{{") && !strings.Contains(resultURL, "%7B%7B") {
 					t.Errorf("Template syntax not properly encoded: %s", resultURL)
 				}
@@ -283,11 +283,11 @@ func TestSecurityErrorMessageSafety(t *testing.T) {
 	urlFunc := helpers["url"].(func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error))
 
 	tests := []struct {
-		name              string
-		args              []*pongo2.Value
-		shouldError       bool
-		forbiddenContent  []string
-		description       string
+		name             string
+		args             []*pongo2.Value
+		shouldError      bool
+		forbiddenContent []string
+		description      string
 	}{
 		{
 			name: "Non-existent group error",
@@ -358,7 +358,7 @@ func TestSecurityErrorMessageSafety(t *testing.T) {
 	}
 }
 
-// TestSecurityMaliciousInputHandling tests various malicious input scenarios 
+// TestSecurityMaliciousInputHandling tests various malicious input scenarios
 func TestSecurityMaliciousInputHandling(t *testing.T) {
 	manager := NewRouteManager()
 	manager.RegisterGroup("test", "https://example.com", map[string]string{
@@ -435,7 +435,7 @@ func TestSecurityMaliciousInputHandling(t *testing.T) {
 						t.Errorf("Unexpected error result: %s", resultURL)
 					} else {
 						t.Logf("Successfully handled input: %s", resultURL)
-						
+
 						// Basic sanity checks for successful URLs
 						if !strings.HasPrefix(resultURL, "https://") {
 							t.Errorf("Invalid URL format: %s", resultURL)
@@ -501,7 +501,7 @@ func TestSecurityConcurrentAccess(t *testing.T) {
 	// Wait for all workers to complete with timeout
 	completed := 0
 	timeout := time.After(10 * time.Second)
-	
+
 	for completed < numWorkers {
 		select {
 		case <-done:
