@@ -15,4 +15,5 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
+	github.com/flosch/pongo2/v6 v6.0.0 // indirect
 )
