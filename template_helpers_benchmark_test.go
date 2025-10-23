@@ -388,7 +388,7 @@ func setupBenchmarkManager() *RouteManager {
 			{
 				Name:    "frontend",
 				BaseURL: "https://example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home":         "/",
 					"about":        "/about",
 					"contact":      "/contact",
@@ -401,7 +401,7 @@ func setupBenchmarkManager() *RouteManager {
 			{
 				Name:    "api",
 				BaseURL: "https://api.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"users":      "/v1/users/:id?",
 					"posts":      "/v1/posts",
 					"health":     "/health",
@@ -413,7 +413,7 @@ func setupBenchmarkManager() *RouteManager {
 			{
 				Name:    "admin",
 				BaseURL: "https://admin.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"dashboard": "/dashboard",
 					"users":     "/users",
 					"reports":   "/reports/:type",

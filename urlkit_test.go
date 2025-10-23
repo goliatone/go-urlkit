@@ -303,7 +303,7 @@ func TestNewRouteManagerWithConfig(t *testing.T) {
 			{
 				Name:    "frontend",
 				BaseURL: "http://localhost:7680",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"auth.callback":       "/integrations/:provider/:service/:id",
 					"auth.callback.error": "/integrations/:provider/:service/error",
 				},
@@ -311,7 +311,7 @@ func TestNewRouteManagerWithConfig(t *testing.T) {
 			{
 				Name:    "webhooks",
 				BaseURL: "https://api.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"google.watcher": "/webhooks/google/watcher/:service/:uuid?",
 				},
 			},
@@ -377,7 +377,7 @@ func TestConfigValidation(t *testing.T) {
 			{
 				Name:    "frontend",
 				BaseURL: "http://localhost:7680",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"auth.callback":       "/integrations/:provider/:service/:id",
 					"auth.callback.error": "/integrations/:provider/:service/error",
 				},
@@ -385,7 +385,7 @@ func TestConfigValidation(t *testing.T) {
 			{
 				Name:    "backend",
 				BaseURL: "http://localhost:8080",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"api.users": "/api/users/:id",
 				},
 			},
@@ -427,13 +427,13 @@ func TestEmptyConfig(t *testing.T) {
 	manager.Group("nonexistent")
 }
 
-func TestConfigWithEmptyPaths(t *testing.T) {
+func TestConfigWithEmptyRoutes(t *testing.T) {
 	config := urlkit.Config{
 		Groups: []urlkit.GroupConfig{
 			{
 				Name:    "empty",
 				BaseURL: "http://example.com",
-				Paths:   map[string]string{},
+				Routes:  map[string]string{},
 			},
 		},
 	}
@@ -455,7 +455,7 @@ func TestConfigIntegrationWithExistingAPI(t *testing.T) {
 			{
 				Name:    "api",
 				BaseURL: "https://api.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"users.show": "/users/:id",
 					"posts.list": "/posts",
 				},
@@ -493,7 +493,7 @@ func TestConfigIntegrationWithExistingAPI(t *testing.T) {
 	}
 }
 
-func TestNestedGroupValidationWithDotSeparatedPaths(t *testing.T) {
+func TestNestedGroupValidationWithDotSeparatedRoutes(t *testing.T) {
 	// Create a route manager with nested groups
 	rm := urlkit.NewRouteManager()
 
@@ -584,7 +584,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 			{
 				Name:    "api",
 				BaseURL: "https://api.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"status":  "/status",
 					"version": "/version",
 				},
@@ -592,7 +592,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 					{
 						Name: "v1",
 						Path: "/v1",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"users":    "/users/:id",
 							"posts":    "/posts",
 							"comments": "/comments/:postId",
@@ -601,7 +601,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 							{
 								Name: "admin",
 								Path: "/admin",
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"dashboard": "/dashboard",
 									"settings":  "/settings/:section",
 								},
@@ -611,7 +611,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 					{
 						Name: "v2",
 						Path: "/v2",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"users":    "/users/:id",
 							"profiles": "/users/:id/profile",
 						},
@@ -621,14 +621,14 @@ func TestNestedConfigurationParsing(t *testing.T) {
 			{
 				Name:    "frontend",
 				BaseURL: "https://example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home": "/",
 				},
 				Groups: []urlkit.GroupConfig{
 					{
 						Name: "en",
 						Path: "/en",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"about":   "/about",
 							"contact": "/contact",
 						},
@@ -636,7 +636,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 					{
 						Name: "es",
 						Path: "/es",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"about":   "/acerca",
 							"contact": "/contacto",
 						},
@@ -745,7 +745,7 @@ func TestConfigurationBackwardCompatibility(t *testing.T) {
 			{
 				Name:    "api",
 				BaseURL: "https://api.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"users": "/users/:id",
 					"posts": "/posts",
 				},
@@ -753,7 +753,7 @@ func TestConfigurationBackwardCompatibility(t *testing.T) {
 			{
 				Name:    "frontend",
 				BaseURL: "https://frontend.example.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home":  "/",
 					"about": "/about",
 				},
@@ -761,7 +761,10 @@ func TestConfigurationBackwardCompatibility(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(flatConfig)
+	manager, err := urlkit.NewRouteManagerFromConfig(flatConfig)
+	if err != nil {
+		t.Fatalf("unexpected error loading flat configuration: %v", err)
+	}
 
 	// Test that flat configuration works exactly as before
 	apiGroup := manager.Group("api")
@@ -828,13 +831,13 @@ func TestConfigurationErrorCases(t *testing.T) {
 			{
 				Name:    "api",
 				BaseURL: "https://api.example.com",
-				Paths:   map[string]string{"status": "/status"},
+				Routes:  map[string]string{"status": "/status"},
 				Groups: []urlkit.GroupConfig{
 					{
 						Name:    "v1",
 						BaseURL: "https://invalid.example.com", // This should cause panic
 						Path:    "/v1",
-						Paths:   map[string]string{"users": "/users"},
+						Routes:  map[string]string{"users": "/users"},
 					},
 				},
 			},
@@ -849,8 +852,8 @@ func TestConfigurationErrorCases(t *testing.T) {
 				didPanic = true
 				// Verify the panic message mentions the issue
 				errorMsg := fmt.Sprintf("%v", r)
-				if !strings.Contains(errorMsg, "nested group") || !strings.Contains(errorMsg, "base_url") {
-					t.Errorf("Expected panic message about nested group base_url, got: %v", r)
+				if !strings.Contains(errorMsg, "invalid configuration") || !strings.Contains(errorMsg, "base_url") {
+					t.Errorf("Expected panic message about invalid base_url configuration, got: %v", r)
 				}
 			}
 		}()
@@ -866,7 +869,10 @@ func TestConfigurationErrorCases(t *testing.T) {
 		Groups: []urlkit.GroupConfig{},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(emptyConfig)
+	manager, err := urlkit.NewRouteManagerFromConfig(emptyConfig)
+	if err != nil {
+		t.Fatalf("unexpected error loading empty configuration: %v", err)
+	}
 
 	// Should not panic but accessing non-existent groups should panic
 	defer func() {
@@ -877,31 +883,31 @@ func TestConfigurationErrorCases(t *testing.T) {
 	manager.Group("nonexistent")
 }
 
-func TestConfigurationWithEmptyOrNilPaths(t *testing.T) {
-	// Test groups with empty path segments and nil paths
+func TestConfigurationWithEmptyOrNilRoutes(t *testing.T) {
+	// Test groups with empty path segments and nil routes
 	config := urlkit.Config{
 		Groups: []urlkit.GroupConfig{
 			{
 				Name:    "api",
 				BaseURL: "https://api.example.com",
-				Paths:   nil, // Nil paths should be handled
+				Routes:  nil, // Nil routes should be handled
 				Groups: []urlkit.GroupConfig{
 					{
-						Name:  "v1",
-						Path:  "", // Empty path should be handled
-						Paths: map[string]string{"users": "/users/:id"},
+						Name:   "v1",
+						Path:   "", // Empty path should be handled
+						Routes: map[string]string{"users": "/users/:id"},
 					},
 					{
-						Name:  "v2",
-						Path:  "/v2",
-						Paths: map[string]string{}, // Empty paths map
+						Name:   "v2",
+						Path:   "/v2",
+						Routes: map[string]string{}, // Empty routes map
 					},
 				},
 			},
 			{
 				Name:    "empty",
 				BaseURL: "https://empty.example.com",
-				Paths:   map[string]string{}, // Empty but not nil
+				Routes:  map[string]string{}, // Empty but not nil
 			},
 		},
 	}
@@ -1451,14 +1457,14 @@ func ExampleRouteManager_configurationBasedSetup() {
 			{
 				Name:    "frontend",
 				BaseURL: "https://myapp.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home": "/",
 				},
 				Groups: []urlkit.GroupConfig{
 					{
 						Name: "en",
 						Path: "/en",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"about":   "/about",
 							"contact": "/contact",
 						},
@@ -1466,7 +1472,7 @@ func ExampleRouteManager_configurationBasedSetup() {
 							{
 								Name: "help",
 								Path: "/help",
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"faq":     "/faq",
 									"support": "/support/:ticketId?",
 								},
@@ -1478,14 +1484,14 @@ func ExampleRouteManager_configurationBasedSetup() {
 			{
 				Name:    "api",
 				BaseURL: "https://api.myapp.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"status": "/status",
 				},
 				Groups: []urlkit.GroupConfig{
 					{
 						Name: "v1",
 						Path: "/v1",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"users": "/users/:id",
 						},
 					},
@@ -1536,9 +1542,9 @@ func ExampleRouteManager_configurationBasedSetup() {
 	// API Users URL: https://api.myapp.com/v1/users/user-123?include=profile
 }
 
-// ExampleRouteManager_validationWithDotSeparatedPaths demonstrates how to validate
+// ExampleRouteManager_validationWithDotSeparatedRoutes demonstrates how to validate
 // nested group configurations using dot-separated path notation.
-func ExampleRouteManager_validationWithDotSeparatedPaths() {
+func ExampleRouteManager_validationWithDotSeparatedRoutes() {
 	// Create a complex nested structure
 	rm := urlkit.NewRouteManager()
 
@@ -1990,7 +1996,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 					"locale": "/en",
 					"region": "us",
 				},
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home":    "/",
 					"about":   "/about",
 					"contact": "/contact",
@@ -2003,7 +2009,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 							"locale":  "/en", // Same as parent
 							"section": "support",
 						},
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"faq":     "/faq",
 							"support": "/support/:ticket?",
 						},
@@ -2015,7 +2021,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 							"locale": "/es", // Override parent
 							"region": "es",  // Override parent
 						},
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"inicio":   "/inicio",
 							"contacto": "/contacto",
 						},
@@ -2029,7 +2035,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 				TemplateVars: map[string]string{
 					"api_version": "/v1",
 				},
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"status": "/status",
 				},
 				Groups: []urlkit.GroupConfig{
@@ -2039,7 +2045,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 						TemplateVars: map[string]string{
 							"api_version": "/v2", // Override parent
 						},
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"users": "/users/:id",
 							"posts": "/posts",
 						},
@@ -2538,7 +2544,7 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 			{
 				Name:    "api",
 				BaseURL: "https://api.legacy.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"users":    "/users/:id",
 					"posts":    "/posts/:id",
 					"comments": "/posts/:postId/comments/:commentId?",
@@ -2547,7 +2553,7 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 					{
 						Name: "v1",
 						Path: "/v1",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"search":    "/search",
 							"analytics": "/analytics/:type",
 						},
@@ -2555,7 +2561,7 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 					{
 						Name: "v2",
 						Path: "/v2",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"search":      "/search/:query",
 							"suggestions": "/suggestions",
 						},
@@ -2563,7 +2569,7 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 							{
 								Name: "beta",
 								Path: "/beta",
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"features": "/features/:feature",
 								},
 							},
@@ -2574,7 +2580,7 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 			{
 				Name:    "frontend",
 				BaseURL: "https://www.legacy.com",
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home":     "/",
 					"about":    "/about",
 					"contact":  "/contact",
@@ -2584,7 +2590,7 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 					{
 						Name: "blog",
 						Path: "/blog",
-						Paths: map[string]string{
+						Routes: map[string]string{
 							"posts":    "/posts/:slug",
 							"archives": "/archives/:year/:month?",
 						},
@@ -2594,7 +2600,10 @@ func TestExistingJSONConfigsContinueToWork(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManagerFromConfig(legacyConfig)
+	manager, err := urlkit.NewRouteManagerFromConfig(legacyConfig)
+	if err != nil {
+		t.Fatalf("unexpected error loading legacy configuration: %v", err)
+	}
 
 	// Test root group functionality
 	userURL, err := manager.Group("api").Builder("users").

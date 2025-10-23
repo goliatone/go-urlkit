@@ -21,7 +21,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 					"protocol": "https",
 					"host":     "www.example.com",
 				},
-				Paths: map[string]string{},
+				Routes: map[string]string{},
 				Groups: []urlkit.GroupConfig{
 					{
 						Name: "en",
@@ -34,7 +34,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 								TemplateVars: map[string]string{
 									"section": "about-us",
 								},
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"about": "/about",
 									"team":  "/team",
 								},
@@ -44,7 +44,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 								TemplateVars: map[string]string{
 									"section": "products",
 								},
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"catalog": "/catalog",
 									"details": "/details/:id",
 								},
@@ -62,7 +62,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 								TemplateVars: map[string]string{
 									"section": "nuestra-empresa",
 								},
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"about": "/acerca-de",
 									"team":  "/equipo",
 								},
@@ -72,7 +72,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 								TemplateVars: map[string]string{
 									"section": "productos",
 								},
-								Paths: map[string]string{
+								Routes: map[string]string{
 									"catalog": "/catalogo",
 									"details": "/detalles/:id",
 								},

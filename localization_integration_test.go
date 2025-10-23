@@ -620,7 +620,7 @@ func TestLocalizationIntegrationWithTemplateVariables(t *testing.T) {
 					"host":          "example.com",
 					"locale_prefix": "",
 				},
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home":    "/",
 					"about":   "/about-us",
 					"contact": "/contact-us",
@@ -635,7 +635,7 @@ func TestLocalizationIntegrationWithTemplateVariables(t *testing.T) {
 					"host":          "example.com",
 					"locale_prefix": "es/",
 				},
-				Paths: map[string]string{
+				Routes: map[string]string{
 					"home":    "/",
 					"about":   "/acerca-de",
 					"contact": "/contacto",
