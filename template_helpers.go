@@ -530,6 +530,12 @@ func TemplateHelpers(manager *RouteManager, config *TemplateHelperConfig) map[st
 	currentRouteIfFn := safeTemplateHelper("current_route_if", config, currentRouteIfHelper(config))
 	helpers["current_route_if"] = currentRouteIfFn
 
+	// backwards compatible helper aliases
+	// TODO: remove or add configurable key names
+	helpers["URL"] = urlFn
+	helpers["RoutePath"] = routePathFn
+	helpers["Navigation"] = navigationFn
+
 	return helpers
 }
 
