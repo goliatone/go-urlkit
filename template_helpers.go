@@ -502,16 +502,33 @@ func TemplateHelpers(manager *RouteManager, config *TemplateHelperConfig) map[st
 	helpers := make(map[string]any)
 
 	// Core URL helpers (wrapped with panic recovery and using optimizations)
-	helpers["url"] = safeTemplateHelper("url", config, urlHelperWithCache(groupCache, config))
-	helpers["route_path"] = safeTemplateHelper("route_path", config, routePathHelper(manager, config))
-	helpers["has_route"] = safeTemplateHelper("has_route", config, hasRouteHelper(manager, config))
-	helpers["route_template"] = safeTemplateHelper("route_template", config, routeTemplateHelper(manager, config))
-	helpers["route_vars"] = safeTemplateHelper("route_vars", config, routeVarsHelper(manager, config))
-	helpers["route_exists"] = safeTemplateHelper("route_exists", config, routeExistsHelper(manager, config))
-	helpers["url_abs"] = safeTemplateHelper("url_abs", config, urlAbsHelper(manager, config))
+	urlFn := safeTemplateHelper("url", config, urlHelperWithCache(groupCache, config))
+	helpers["url"] = urlFn
+
+	routePathFn := safeTemplateHelper("route_path", config, routePathHelper(manager, config))
+	helpers["route_path"] = routePathFn
+
+	hasRouteFn := safeTemplateHelper("has_route", config, hasRouteHelper(manager, config))
+	helpers["has_route"] = hasRouteFn
+
+	routeTemplateFn := safeTemplateHelper("route_template", config, routeTemplateHelper(manager, config))
+	helpers["route_template"] = routeTemplateFn
+
+	routeVarsFn := safeTemplateHelper("route_vars", config, routeVarsHelper(manager, config))
+	helpers["route_vars"] = routeVarsFn
+
+	routeExistsFn := safeTemplateHelper("route_exists", config, routeExistsHelper(manager, config))
+	helpers["route_exists"] = routeExistsFn
+
+	urlAbsFn := safeTemplateHelper("url_abs", config, urlAbsHelper(manager, config))
+	helpers["url_abs"] = urlAbsFn
+
+	navigationFn := safeTemplateHelper("navigation", config, navigationHelper(manager, config))
+	helpers["navigation"] = navigationFn
 
 	// Contextual Helper Functions (work with middleware-injected context)
-	helpers["current_route_if"] = safeTemplateHelper("current_route_if", config, currentRouteIfHelper(config))
+	currentRouteIfFn := safeTemplateHelper("current_route_if", config, currentRouteIfHelper(config))
+	helpers["current_route_if"] = currentRouteIfFn
 
 	return helpers
 }
@@ -546,11 +563,20 @@ func TemplateHelpersWithLocale(manager *RouteManager, config *TemplateHelperConf
 	helpers := TemplateHelpers(manager, config)
 
 	// Add localization helpers (wrapped with panic recovery)
-	helpers["url_i18n"] = safeTemplateHelper("url_i18n", config, urlI18nHelper(manager, config, localeConfig))
-	helpers["url_locale"] = safeTemplateHelper("url_locale", config, urlLocaleHelper(manager, config, localeConfig))
-	helpers["url_all_locales"] = safeTemplateHelper("url_all_locales", config, urlAllLocalesHelper(manager, config, localeConfig))
-	helpers["has_locale"] = safeTemplateHelper("has_locale", config, hasLocaleHelper(manager, config, localeConfig))
-	helpers["current_locale"] = safeTemplateHelper("current_locale", config, currentLocaleHelper(config, localeConfig))
+	urlI18nFn := safeTemplateHelper("url_i18n", config, urlI18nHelper(manager, config, localeConfig))
+	helpers["url_i18n"] = urlI18nFn
+
+	urlLocaleFn := safeTemplateHelper("url_locale", config, urlLocaleHelper(manager, config, localeConfig))
+	helpers["url_locale"] = urlLocaleFn
+
+	urlAllLocalesFn := safeTemplateHelper("url_all_locales", config, urlAllLocalesHelper(manager, config, localeConfig))
+	helpers["url_all_locales"] = urlAllLocalesFn
+
+	hasLocaleFn := safeTemplateHelper("has_locale", config, hasLocaleHelper(manager, config, localeConfig))
+	helpers["has_locale"] = hasLocaleFn
+
+	currentLocaleFn := safeTemplateHelper("current_locale", config, currentLocaleHelper(config, localeConfig))
+	helpers["current_locale"] = currentLocaleFn
 
 	return helpers
 }
@@ -758,6 +784,113 @@ func parseArgs(args ...*pongo2.Value) (*urlHelperArgs, error) {
 	}
 	if result.Query == nil {
 		result.Query = make(map[string]string)
+	}
+
+	return result, nil
+}
+
+func navigationHelper(manager *RouteManager, config *TemplateHelperConfig) func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+	return func(args ...*pongo2.Value) (*pongo2.Value, *pongo2.Error) {
+		if len(args) < 2 {
+			return formatError("navigation", "insufficient_args", "requires group and routes", map[string]any{"args_count": len(args)}, config), nil
+		}
+
+		groupVal := fromPongoValue(args[0])
+		groupName, ok := groupVal.(string)
+		if !ok || groupName == "" {
+			return formatError("navigation", "invalid_group", "group must be a non-empty string", map[string]any{"group": groupVal}, config), nil
+		}
+
+		routesVal := fromPongoValue(args[1])
+		routeNames, err := extractRouteNames(routesVal)
+		if err != nil {
+			return formatError("navigation", "invalid_routes", err.Error(), map[string]any{"routes": routesVal}, config), nil
+		}
+
+		paramsMap := map[string]Params{}
+		if len(args) > 2 && args[2] != nil {
+			rawParams := fromPongoValue(args[2])
+			paramsMap, err = extractNavigationParams(rawParams)
+			if err != nil {
+				return formatError("navigation", "invalid_params", err.Error(), map[string]any{"params": rawParams}, config), nil
+			}
+		}
+
+		group := safeGroupAccess(manager, groupName)
+		if group == nil {
+			context := map[string]any{
+				"group_name": groupName,
+			}
+			return formatError("navigation", "group_not_found", fmt.Sprintf("group '%s' not found", groupName), context, config), nil
+		}
+
+		nodes, err := group.Navigation(routeNames, func(route string) Params {
+			if params, ok := paramsMap[route]; ok {
+				return params
+			}
+			return nil
+		})
+		if err != nil {
+			context := map[string]any{
+				"group_name": groupName,
+				"routes":     routeNames,
+			}
+			return formatError("navigation", "build_error", err.Error(), context, config), nil
+		}
+
+		return pongo2.AsValue(nodes), nil
+	}
+}
+
+func extractRouteNames(value any) ([]string, error) {
+	switch v := value.(type) {
+	case nil:
+		return []string{}, nil
+	case string:
+		return []string{v}, nil
+	case []string:
+		return append([]string(nil), v...), nil
+	case []any:
+		routes := make([]string, len(v))
+		for i, item := range v {
+			str, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("route at index %d must be a string", i)
+			}
+			routes[i] = str
+		}
+		return routes, nil
+	default:
+		return nil, fmt.Errorf("routes must be provided as a list of strings")
+	}
+}
+
+func extractNavigationParams(value any) (map[string]Params, error) {
+	if value == nil {
+		return map[string]Params{}, nil
+	}
+
+	paramMap, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("navigation params must be a map of route -> params")
+	}
+
+	result := make(map[string]Params, len(paramMap))
+	for route, paramsValue := range paramMap {
+		if paramsValue == nil {
+			continue
+		}
+
+		rawParams, ok := paramsValue.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("parameters for route '%s' must be a map[string]any", route)
+		}
+
+		cloned := make(Params, len(rawParams))
+		for key, val := range rawParams {
+			cloned[key] = val
+		}
+		result[route] = cloned
 	}
 
 	return result, nil
