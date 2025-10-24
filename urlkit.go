@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
+	"sync"
 
 	ptre "github.com/soongo/path-to-regexp"
 )
@@ -53,7 +56,27 @@ func (g GroupValidationError) Error() string {
 	return fmt.Sprintf("missing routes: %v", g.MissingRoutes)
 }
 
+// TemplateSubstitutionError represents a failure to replace all placeholders in a template.
+type TemplateSubstitutionError struct {
+	Group         string
+	Route         string
+	TemplateOwner string
+	Template      string
+	Missing       []string
+}
+
+func (e TemplateSubstitutionError) Error() string {
+	return fmt.Sprintf(
+		"template substitution failed for group %q route %q (template owner %q): missing variables %v",
+		e.Group,
+		e.Route,
+		e.TemplateOwner,
+		e.Missing,
+	)
+}
+
 type RouteManager struct {
+	mu     sync.RWMutex
 	groups map[string]*Group
 }
 
@@ -174,8 +197,10 @@ func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Gro
 
 		m.RegisterGroup(cfg.Name, cfg.BaseURL, routes)
 		group := m.Group(cfg.Name)
+		group.mu.Lock()
 		group.name = cfg.Name
 		group.path = cfg.Path
+		group.mu.Unlock()
 
 		if cfg.URLTemplate != "" {
 			group.SetURLTemplate(cfg.URLTemplate)
@@ -202,7 +227,12 @@ func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Gro
 	}
 
 	childGroup := parent.RegisterGroup(cfg.Name, cfg.Path, routes)
+	childGroup.mu.Lock()
 	childGroup.name = cfg.Name
+	if cfg.Path != "" {
+		childGroup.path = cfg.Path
+	}
+	childGroup.mu.Unlock()
 
 	if cfg.URLTemplate != "" {
 		childGroup.SetURLTemplate(cfg.URLTemplate)
@@ -225,23 +255,24 @@ func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Gro
 }
 
 func (m *RouteManager) RegisterGroup(name, baseURL string, routes map[string]string) *RouteManager {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if group, exists := m.groups[name]; exists {
+		group.mu.Lock()
 		if group.name == "" {
 			group.name = name
 		}
-		maps.Copy(m.groups[name].routes, routes)
-		for route, tpl := range routes {
-			group.compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
-				Encode: func(uri string, token any) string {
-					return url.PathEscape(uri)
-				},
-			})
-		}
-	} else {
-		group := NewURIHelper(baseURL, routes)
-		group.name = name
-		m.groups[name] = group
+		group.mu.Unlock()
+		group.AddRoutes(routes)
+		return m
 	}
+
+	group := NewURIHelper(baseURL, routes)
+	group.mu.Lock()
+	group.name = name
+	group.mu.Unlock()
+	m.groups[name] = group
 	return m
 }
 
@@ -261,22 +292,13 @@ func (m *RouteManager) Validate(groups map[string][]string) error {
 	validation := make(map[string][]string)
 	failed := false
 	for name, routes := range groups {
-		var group *Group
-
-		// Check if this is a dot-separated path for nested groups
-		if strings.Contains(name, ".") {
-			group = m.findGroupByPath(name)
-		} else {
-			// Backward compatibility: check root-level groups first
-			var ok bool
-			group, ok = m.groups[name]
-			if !ok {
-				group = nil
+		group, err := m.GetGroup(name)
+		if err != nil {
+			if errors.Is(err, ErrGroupNotFound) {
+				validation[name] = []string{"Missing group"}
+			} else {
+				validation[name] = []string{err.Error()}
 			}
-		}
-
-		if group == nil {
-			validation[name] = []string{"Missing group"}
 			failed = true
 			continue
 		}
@@ -298,6 +320,36 @@ func (m *RouteManager) Validate(groups map[string][]string) error {
 	return nil
 }
 
+// DebugTree returns a formatted string representing the entire group hierarchy,
+// including routes, templates, and effective template variables for each group.
+// Output is stable (sorted alphabetically) to simplify inspection and diffing.
+func (m *RouteManager) DebugTree() string {
+	if m == nil {
+		return "RouteManager: <nil>"
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if len(m.groups) == 0 {
+		return "RouteManager: <empty>"
+	}
+
+	var builder strings.Builder
+	builder.WriteString("RouteManager Debug Tree:\n")
+
+	rootNames := slices.Sorted(maps.Keys(m.groups))
+
+	for idx, name := range rootNames {
+		appendGroupDebug(&builder, m.groups[name], 0)
+		if idx < len(rootNames)-1 {
+			builder.WriteByte('\n')
+		}
+	}
+
+	return builder.String()
+}
+
 // GetGroup returns the group registered at the given path. The path may reference
 // nested groups using dot-notation (e.g., "frontend.en.marketing"). Returns
 // ErrGroupNotFound when the requested group does not exist.
@@ -305,6 +357,9 @@ func (m *RouteManager) GetGroup(path string) (*Group, error) {
 	if path == "" {
 		return nil, fmt.Errorf("%w: empty group path", ErrGroupNotFound)
 	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	if group, ok := m.groups[path]; ok {
 		return group, nil
@@ -368,7 +423,9 @@ func (m *RouteManager) findGroupByPath(path string) *Group {
 	// Traverse the hierarchy for nested groups
 	currentGroup := rootGroup
 	for i := 1; i < len(parts); i++ {
+		currentGroup.mu.RLock()
 		childGroup, exists := currentGroup.children[parts[i]]
+		currentGroup.mu.RUnlock()
 		if !exists {
 			return nil
 		}
@@ -397,9 +454,12 @@ func (m *RouteManager) EnsureGroup(path string) (*Group, error) {
 		return nil, fmt.Errorf("%w: empty group path", ErrGroupNotFound)
 	}
 
-	root, err := m.GetGroup(parts[0])
-	if err != nil {
-		return nil, err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	root, exists := m.groups[parts[0]]
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, parts[0])
 	}
 
 	current := root
@@ -409,24 +469,25 @@ func (m *RouteManager) EnsureGroup(path string) (*Group, error) {
 			return nil, fmt.Errorf("ensure group: %w", err)
 		}
 
-		if child, ok := current.children[name]; ok {
+		current.mu.RLock()
+		child, ok := current.children[name]
+		current.mu.RUnlock()
+		if ok {
 			current = child
 			continue
 		}
 
-		current = current.RegisterGroup(name, segmentPath, map[string]string{})
-		// Guarantee name for newly created group (RegisterGroup already sets it,
-		// but this keeps the intent explicit).
-		current.name = name
+		current = current.registerChildLocked(name, segmentPath, map[string]string{})
 
+		current.mu.Lock()
 		if current.path == "" {
 			current.path = segmentPath
 		}
-
-		// Protect against accidental empty paths to maintain hierarchy integrity.
 		if current.path == "" {
+			current.mu.Unlock()
 			return nil, fmt.Errorf("ensure group: empty path for segment %q at position %d", name, idx+2)
 		}
+		current.mu.Unlock()
 	}
 
 	return current, nil
@@ -465,6 +526,7 @@ func (m *RouteManager) AddRoutes(path string, routes map[string]string) (*Group,
 // - {base_url}: Automatically available, contains the root group's base URL
 // - {route_path}: Automatically available, contains the compiled route with parameters
 type Group struct {
+	mu             sync.RWMutex
 	baseURL        string
 	routes         map[string]string
 	compiledRoutes map[string]func(any) (string, error)
@@ -503,6 +565,9 @@ func NewURIHelper(baseURL string, routes map[string]string) *Group {
 // Validate checks whether the group contains all expected routes.
 // It returns a GroupValidationError if any routes are missing.
 func (u *Group) Validate(routes []string) error {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+
 	var missing []string
 	for _, name := range routes {
 		if _, ok := u.routes[name]; !ok {
@@ -518,7 +583,9 @@ func (u *Group) Validate(routes []string) error {
 }
 
 func (u *Group) Render(routeName string, params Params, queries ...Query) (string, error) {
+	u.mu.RLock()
 	compiled, ok := u.compiledRoutes[routeName]
+	u.mu.RUnlock()
 	if !ok {
 		return "", fmt.Errorf("%w: route %q in group %s", ErrRouteNotFound, routeName, groupDisplayName(u))
 	}
@@ -527,7 +594,7 @@ func (u *Group) Render(routeName string, params Params, queries ...Query) (strin
 	templateOwner := u.FindTemplateOwner()
 	if templateOwner != nil {
 		// Use template rendering mode
-		return u.renderTemplatedURL(routeName, params, queries...)
+		return u.renderTemplatedURL(routeName, compiled, params, queries...)
 	}
 
 	// Fall back to existing path concatenation mode
@@ -536,16 +603,20 @@ func (u *Group) Render(routeName string, params Params, queries ...Query) (strin
 		return "", fmt.Errorf("failed to build route: %s", err)
 	}
 
-	fullPath := u.getFullPath() + routePath
+	fullPath := joinURLPath(u.getFullPath(), routePath)
 
 	rootGroup := u.getRootGroup()
+	rootGroup.mu.RLock()
 	baseURL := rootGroup.baseURL
+	rootGroup.mu.RUnlock()
 
 	return JoinURL(baseURL, fullPath, queries...), nil
 }
 
 func (u *Group) Route(routeName string) (string, error) {
+	u.mu.RLock()
 	route, ok := u.routes[routeName]
+	u.mu.RUnlock()
 	if !ok {
 		return "", fmt.Errorf("%w: route %q in group %s", ErrRouteNotFound, routeName, groupDisplayName(u))
 	}
@@ -572,7 +643,9 @@ func (u *Group) Builder(routeName string) *Builder {
 // Group returns a child group by name for fluent API traversal.
 // It panics if the child group is not found.
 func (u *Group) Group(name string) *Group {
+	u.mu.RLock()
 	group, exists := u.children[name]
+	u.mu.RUnlock()
 	if !exists {
 		panic(fmt.Errorf("%w: %s.%s", ErrGroupNotFound, groupDisplayName(u), name))
 	}
@@ -582,20 +655,36 @@ func (u *Group) Group(name string) *Group {
 // getFullPath builds the full path by traversing up the parent chain.
 // It accumulates path segments from child to root, excluding the route itself.
 func (u *Group) getFullPath() string {
-	if u.parent == nil {
-		return u.path
+	if u == nil {
+		return ""
 	}
 
-	parentPath := u.parent.getFullPath()
-	return parentPath + u.path
+	u.mu.RLock()
+	path := u.path
+	parent := u.parent
+	u.mu.RUnlock()
+
+	if parent == nil {
+		return path
+	}
+
+	return parent.getFullPath() + path
 }
 
 // getRootGroup finds and returns the root group by traversing up the parent chain.
 func (u *Group) getRootGroup() *Group {
-	if u.parent == nil {
+	if u == nil {
+		return nil
+	}
+
+	u.mu.RLock()
+	parent := u.parent
+	u.mu.RUnlock()
+
+	if parent == nil {
 		return u
 	}
-	return u.parent.getRootGroup()
+	return parent.getRootGroup()
 }
 
 // Navigation builds a slice of NavigationNode entries for the provided routes.
@@ -663,61 +752,74 @@ func (u *Group) FullName() string {
 		return ""
 	}
 
-	if u.parent == nil {
-		return u.name
+	u.mu.RLock()
+	name := u.name
+	parent := u.parent
+	u.mu.RUnlock()
+
+	if parent == nil {
+		return name
 	}
 
-	parentName := u.parent.FullName()
+	parentName := parent.FullName()
 	if parentName == "" {
-		return u.name
+		return name
 	}
 
-	if u.name == "" {
+	if name == "" {
 		return parentName
 	}
 
-	return parentName + "." + u.name
+	return parentName + "." + name
 }
 
 // RegisterGroup creates and registers a new child group under the current group.
 // If a child group with the same name already exists, it merges the routes.
 func (u *Group) RegisterGroup(name, path string, routes map[string]string) *Group {
+	return u.registerChildLocked(name, path, routes)
+}
+
+func (u *Group) registerChildLocked(name, path string, routes map[string]string) *Group {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
 	if existingGroup, exists := u.children[name]; exists {
-		// Merge routes into existing child group
-		maps.Copy(existingGroup.routes, routes)
-		for route, tpl := range routes {
-			existingGroup.compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
-				Encode: func(uri string, token any) string {
-					return url.PathEscape(uri)
-				},
-			})
+		if len(routes) > 0 {
+			existingGroup.AddRoutes(routes)
+		}
+		if path != "" {
+			existingGroup.mu.Lock()
+			if existingGroup.path == "" {
+				existingGroup.path = path
+			}
+			existingGroup.mu.Unlock()
 		}
 		return existingGroup
-	} else {
-		compiledRoutes := make(map[string]func(any) (string, error), len(routes))
-		for route, tpl := range routes {
-			compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
-				Encode: func(uri string, token any) string {
-					return url.PathEscape(uri)
-				},
-			})
-		}
-
-		childGroup := &Group{
-			baseURL:        "", // Child groups don't have base URLs
-			routes:         routes,
-			compiledRoutes: compiledRoutes,
-			name:           name,
-			path:           path,
-			parent:         u,
-			children:       make(map[string]*Group),
-			urlTemplate:    "",
-			templateVars:   make(map[string]string),
-		}
-
-		u.children[name] = childGroup
-		return childGroup
 	}
+
+	compiledRoutes := make(map[string]func(any) (string, error), len(routes))
+	for route, tpl := range routes {
+		compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
+			Encode: func(uri string, token any) string {
+				return url.PathEscape(uri)
+			},
+		})
+	}
+
+	childGroup := &Group{
+		baseURL:        "", // Child groups don't have base URLs
+		routes:         routes,
+		compiledRoutes: compiledRoutes,
+		name:           name,
+		path:           path,
+		parent:         u,
+		children:       make(map[string]*Group),
+		urlTemplate:    "",
+		templateVars:   make(map[string]string),
+	}
+
+	u.children[name] = childGroup
+	return childGroup
 }
 
 // Template Management Methods
@@ -738,6 +840,8 @@ func (u *Group) RegisterGroup(name, path string, routes map[string]string) *Grou
 //
 // To disable template rendering and revert to path concatenation, pass an empty string.
 func (u *Group) SetURLTemplate(template string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	u.urlTemplate = template
 }
 
@@ -756,6 +860,8 @@ func (u *Group) SetURLTemplate(template string) {
 //   - SetTemplateVar("env", "staging") for environment-specific URLs
 //   - SetTemplateVar("region", "eu-west") for regional deployments
 func (u *Group) SetTemplateVar(key, value string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	u.templateVars[key] = value
 }
 
@@ -774,6 +880,8 @@ func (u *Group) SetTemplateVar(key, value string) {
 //	    fmt.Printf("Locale is set to: %s\n", value)
 //	}
 func (u *Group) GetTemplateVar(key string) (string, bool) {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
 	value, exists := u.templateVars[key]
 	return value, exists
 }
@@ -798,6 +906,9 @@ func (u *Group) GetTemplateVar(key string) (string, bool) {
 //	    "status":   "/status",
 //	})
 func (u *Group) AddRoutes(routes map[string]string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
 	// Add routes to the routes map
 	for route, tpl := range routes {
 		u.routes[route] = tpl
@@ -825,18 +936,17 @@ func (u *Group) AddRoutes(routes map[string]string) {
 // This method is essential for template-based URL construction as it determines
 // which group's template should be used for rendering the final URL.
 func (u *Group) FindTemplateOwner() *Group {
-	// Check current group first
-	if u.urlTemplate != "" {
-		return u
+	for current := u; current != nil; {
+		current.mu.RLock()
+		if current.urlTemplate != "" {
+			current.mu.RUnlock()
+			return current
+		}
+		parent := current.parent
+		current.mu.RUnlock()
+		current = parent
 	}
-
-	// If no parent, return nil (no template found in hierarchy)
-	if u.parent == nil {
-		return nil
-	}
-
-	// Recursively check parent chain
-	return u.parent.FindTemplateOwner()
+	return nil
 }
 
 // CollectTemplateVars aggregates template variables from the entire group hierarchy,
@@ -861,37 +971,24 @@ func (u *Group) FindTemplateOwner() *Group {
 //	If parent has {"lang": "en", "theme": "light"} and child has {"lang": "es"},
 //	the result will be {"lang": "es", "theme": "light"}.
 func (u *Group) CollectTemplateVars() map[string]string {
-	vars := make(map[string]string)
+	var chain []*Group
+	for current := u; current != nil; {
+		current.mu.RLock()
+		parent := current.parent
+		current.mu.RUnlock()
 
-	// Collect variables from root to current group (parent first, child overrides)
-	u.collectTemplateVarsRecursive(vars)
-
-	return vars
-}
-
-// collectTemplateVarsRecursive is an internal helper method that implements the recursive
-// variable collection algorithm for the template system.
-//
-// The method performs a post-order traversal of the group hierarchy, first collecting
-// variables from parent groups, then adding/overriding with the current group's variables.
-// This ensures the correct precedence order where child variables take priority over
-// parent variables with the same key.
-//
-// Parameters:
-//   - vars: A map[string]string that accumulates variables as the recursion progresses.
-//     This map is modified in-place during the traversal.
-//
-// The method uses Go's maps.Copy function to efficiently merge template variables,
-// which automatically handles key conflicts by using the source map's values
-// (current group) over the destination map's values (accumulated parent variables).
-func (u *Group) collectTemplateVarsRecursive(vars map[string]string) {
-	// First collect parent variables (if parent exists)
-	if u.parent != nil {
-		u.parent.collectTemplateVarsRecursive(vars)
+		chain = append(chain, current)
+		current = parent
 	}
 
-	// Then add/override with current group's variables
-	maps.Copy(vars, u.templateVars)
+	vars := make(map[string]string)
+	for i := len(chain) - 1; i >= 0; i-- {
+		chain[i].mu.RLock()
+		maps.Copy(vars, chain[i].templateVars)
+		chain[i].mu.RUnlock()
+	}
+
+	return vars
 }
 
 // renderTemplatedURL constructs URLs using the template-based rendering system,
@@ -923,17 +1020,11 @@ func (u *Group) collectTemplateVarsRecursive(vars map[string]string) {
 //	With template "{protocol}://{host}/{lang}{route_path}" and variables
 //	{"protocol": "https", "host": "example.com", "lang": "en"},
 //	a route "/about" becomes "https://example.com/en/about".
-func (u *Group) renderTemplatedURL(routeName string, params Params, queries ...Query) (string, error) {
+func (u *Group) renderTemplatedURL(routeName string, compiled func(any) (string, error), params Params, queries ...Query) (string, error) {
 	// Find the template owner (should exist since this method is called when template is found)
 	templateOwner := u.FindTemplateOwner()
 	if templateOwner == nil {
 		return "", fmt.Errorf("no template owner found")
-	}
-
-	// Compile route template with parameters to get the route path
-	compiled, ok := u.compiledRoutes[routeName]
-	if !ok {
-		return "", fmt.Errorf("route %s not found", routeName)
 	}
 
 	routePath, err := compiled(params)
@@ -946,10 +1037,30 @@ func (u *Group) renderTemplatedURL(routeName string, params Params, queries ...Q
 
 	// Add dynamic variables
 	templateVars["route_path"] = routePath
-	templateVars["base_url"] = u.getRootGroup().baseURL
+	root := u.getRootGroup()
+	if root == nil {
+		return "", fmt.Errorf("missing root group for template rendering")
+	}
+	root.mu.RLock()
+	templateVars["base_url"] = root.baseURL
+	root.mu.RUnlock()
+
+	templateOwner.mu.RLock()
+	templateString := templateOwner.urlTemplate
+	templateOwner.mu.RUnlock()
+
+	if missing := detectMissingTemplateVars(templateString, templateVars); len(missing) > 0 {
+		return "", TemplateSubstitutionError{
+			Group:         groupDisplayName(u),
+			Route:         routeName,
+			TemplateOwner: groupDisplayName(templateOwner),
+			Template:      templateString,
+			Missing:       append([]string(nil), missing...),
+		}
+	}
 
 	// Substitute template variables in the template string
-	finalURL := SubstituteTemplate(templateOwner.urlTemplate, templateVars)
+	finalURL := SubstituteTemplate(templateString, templateVars)
 
 	// Append query parameters using existing logic
 	if len(queries) > 0 {
@@ -999,4 +1110,110 @@ func SubstituteTemplate(template string, vars map[string]string) string {
 	}
 
 	return result
+}
+
+var placeholderPattern = regexp.MustCompile(`\{([a-zA-Z0-9_]+)\}`)
+
+func detectMissingTemplateVars(template string, vars map[string]string) []string {
+	matches := placeholderPattern.FindAllStringSubmatch(template, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		seen[match[1]] = struct{}{}
+	}
+
+	var missing []string
+	for key := range seen {
+		if _, ok := vars[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+
+	slices.Sort(missing)
+	return missing
+}
+
+func appendGroupDebug(builder *strings.Builder, group *Group, depth int) {
+	if group == nil {
+		return
+	}
+
+	group.mu.RLock()
+	isRoot := group.parent == nil
+	baseURL := group.baseURL
+	path := group.path
+	template := group.urlTemplate
+	routesCopy := make(map[string]string, len(group.routes))
+	for key, value := range group.routes {
+		routesCopy[key] = value
+	}
+	childMap := make(map[string]*Group, len(group.children))
+	childNames := make([]string, 0, len(group.children))
+	for name, child := range group.children {
+		childMap[name] = child
+		childNames = append(childNames, name)
+	}
+	group.mu.RUnlock()
+
+	indent := strings.Repeat("  ", depth)
+	displayName := groupDisplayName(group)
+	if displayName == "" {
+		displayName = "(unnamed)"
+	}
+
+	meta := make([]string, 0, 2)
+	if isRoot {
+		meta = append(meta, fmt.Sprintf("base=%q", baseURL))
+	}
+	if path != "" {
+		meta = append(meta, fmt.Sprintf("path=%q", path))
+	}
+
+	builder.WriteString(indent)
+	builder.WriteString("- ")
+	builder.WriteString(displayName)
+	if len(meta) > 0 {
+		builder.WriteString(" (")
+		builder.WriteString(strings.Join(meta, ", "))
+		builder.WriteString(")")
+	}
+	builder.WriteByte('\n')
+
+	if template != "" {
+		fmt.Fprintf(builder, "%s  template: %q\n", indent, template)
+	}
+
+	if vars := group.CollectTemplateVars(); len(vars) > 0 {
+		keys := slices.Sorted(maps.Keys(vars))
+		fmt.Fprintf(builder, "%s  vars:\n", indent)
+		for _, key := range keys {
+			fmt.Fprintf(builder, "%s    %s = %q\n", indent, key, vars[key])
+		}
+	}
+
+	if len(routesCopy) > 0 {
+		routeNames := slices.Sorted(maps.Keys(routesCopy))
+		fmt.Fprintf(builder, "%s  routes:\n", indent)
+		for _, route := range routeNames {
+			fmt.Fprintf(builder, "%s    - %s: %s\n", indent, route, routesCopy[route])
+		}
+	}
+
+	if len(childNames) == 0 {
+		return
+	}
+
+	slices.Sort(childNames)
+	for idx, childName := range childNames {
+		appendGroupDebug(builder, childMap[childName], depth+1)
+		if idx < len(childNames)-1 {
+			builder.WriteByte('\n')
+		}
+	}
 }
