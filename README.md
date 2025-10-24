@@ -88,6 +88,26 @@ url := group.Builder("users").
     MustBuild()
 ```
 
+#### Advanced Builder Helpers
+
+```go
+type userParams struct {
+    Locale string `json:"locale"`
+}
+
+url := group.Builder("user").
+    WithParamsMap(map[string]any{"id": 42}).
+    WithStruct(userParams{Locale: "fr"}).
+    WithQueryValues(map[string][]string{"tag": []string{"new", "sale"}}).
+    MustBuild()
+// Result: https://api.example.com/users/42/fr?tag=new&tag=sale
+```
+
+`WithParamsMap` and `WithStruct` normalize Go values into the builder's
+parameter map, merging struct fields by tag (defaulting to JSON semantics).
+`WithQueryValues` makes it easy to add multi-value query parameters using the
+standard `map[string][]string` shape.
+
 ## Usage Examples
 
 ### Basic Route Rendering
@@ -149,6 +169,26 @@ url = group.Builder("userPost").
     WithParam("postId", 456).
     WithQuery("include", "comments").
     MustBuild() // Panics on error
+```
+
+### Route Manager Resolver
+
+`RouteManager` satisfies the `Resolver` interface so you can build URLs without
+holding onto group handles.
+
+```go
+var resolver urlkit.Resolver = rm
+
+url, err := resolver.Resolve("frontend", "login", urlkit.Params{}, urlkit.Query{"lang": "en"})
+// Result: https://app.example.com/auth/login?lang=en
+
+url, err = rm.ResolveWith(
+    "frontend.profile",
+    "details",
+    map[string]any{"userId": 123},
+    map[string][]string{"tab": []string{"posts", "mentions"}},
+)
+// Result: https://app.example.com/profile/123?tab=posts&tab=mentions
 ```
 
 ### Route Manager with Multiple Groups
@@ -321,7 +361,7 @@ func main() {
     // Create template renderer with URLKit helpers
     renderer, err := template.NewRenderer(
         template.WithBaseDir("./templates"),
-        template.WithTemplateFunc(urlkit.TemplateHelpers(manager, nil)),
+        template.WithGlobalData(urlkit.TemplateHelpers(manager, nil)),
     )
     if err != nil {
         panic(err)
@@ -352,6 +392,8 @@ Generate complete URLs with optional path parameters and query strings:
 <!-- Result: https://api.example.com/users/1/posts?sort=date -->
 ```
 
+The helpers are also registered using PascalCase aliases (`URL`, `RoutePath`, `Navigation`, etc.) for teams that prefer Go-style naming in templates.
+
 #### `route_path(group, route, [params], [query])`
 Generate path and query portion only (for JavaScript/AJAX usage):
 
@@ -377,6 +419,23 @@ Get the raw route template for debugging:
 ```html
 <!-- Shows: "/users/:id/profile" -->
 <div>Route template: {{ route_template('frontend', 'user_profile') }}</div>
+```
+
+#### `navigation(group, routes, [params])`
+Return structured navigation nodes ready for rendering menus. The optional params map lets you supply per-route parameters.
+
+```html
+{% set main_nav = Navigation('frontend', ['home', 'profile'], {
+    'profile': {'id': current_user.id},
+}) %}
+
+<nav>
+  {% for item in main_nav %}
+    <a href="{{ item.url }}" class="{% if item.full_route == current_route_name %}active{% endif %}">
+      {{ item.route|title }}
+    </a>
+  {% endfor %}
+</nav>
 ```
 
 ### Contextual Features
