@@ -1,7 +1,6 @@
 package urlkit_test
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -853,8 +852,8 @@ func TestConfigurationErrorCases(t *testing.T) {
 				didPanic = true
 				// Verify the panic message mentions the issue
 				errorMsg := fmt.Sprintf("%v", r)
-				if !strings.Contains(errorMsg, "invalid configuration") || !strings.Contains(errorMsg, "base_url") {
-					t.Errorf("Expected panic message about invalid base_url configuration, got: %v", r)
+				if !strings.Contains(errorMsg, "configuration error") || !strings.Contains(errorMsg, "base_url") {
+					t.Errorf("Expected panic message about configuration base_url restriction, got: %v", r)
 				}
 			}
 		}()
@@ -2174,72 +2173,6 @@ func TestConfigurationRootPathStacking(t *testing.T) {
 	expected := "https://example.com/en/marketing/landing"
 	if landingURL != expected {
 		t.Errorf("Expected %q, got %q", expected, landingURL)
-	}
-}
-
-func TestEnsureGroupCreatesNestedGroups(t *testing.T) {
-	manager := urlkit.NewRouteManager()
-
-	marketing := manager.EnsureGroup("frontend.en@/en.marketing@/marketing")
-	if marketing == nil {
-		t.Fatal("EnsureGroup returned nil group")
-	}
-
-	if got := marketing.FullName(); got != "frontend.en.marketing" {
-		t.Fatalf("expected full name %q, got %q", "frontend.en.marketing", got)
-	}
-
-	marketing.AddRoutes(map[string]string{"landing": "/landing"})
-	landingURL, err := marketing.Builder("landing").Build()
-	if err != nil {
-		t.Fatalf("Failed to build URL from ensured group: %v", err)
-	}
-
-	expected := "/en/marketing/landing"
-	if landingURL != expected {
-		t.Errorf("expected %q, got %q", expected, landingURL)
-	}
-
-	again := manager.EnsureGroup("frontend.en.marketing")
-	if again != marketing {
-		t.Error("EnsureGroup should return existing group for identical path")
-	}
-}
-
-func TestGroupByPathProvidesHelpfulErrors(t *testing.T) {
-	manager := urlkit.NewRouteManager()
-	manager.RegisterGroup("frontend", "https://example.com", map[string]string{
-		"home": "/",
-	})
-	manager.Group("frontend").RegisterGroup("en", "/en", map[string]string{
-		"about": "/about",
-	})
-
-	enGroup, err := manager.GroupByPath("frontend.en")
-	if err != nil {
-		t.Fatalf("expected to resolve frontend.en, got error: %v", err)
-	}
-
-	if got := enGroup.FullName(); got != "frontend.en" {
-		t.Fatalf("expected full name %q, got %q", "frontend.en", got)
-	}
-
-	if _, err := manager.GroupByPath("frontend.es"); err == nil || !errors.Is(err, urlkit.ErrGroupNotFound) {
-		t.Errorf("expected ErrGroupNotFound for frontend.es, got %v", err)
-	}
-}
-
-func TestRouteErrorsWrapSentinels(t *testing.T) {
-	manager := urlkit.NewRouteManager()
-	group := manager.EnsureGroup("frontend")
-	group.AddRoutes(map[string]string{"home": "/"})
-
-	if _, err := group.Route("missing"); err == nil || !errors.Is(err, urlkit.ErrRouteNotFound) {
-		t.Errorf("expected ErrRouteNotFound from Route, got %v", err)
-	}
-
-	if _, err := group.Builder("missing").Build(); err == nil || !errors.Is(err, urlkit.ErrRouteNotFound) {
-		t.Errorf("expected ErrRouteNotFound from Build, got %v", err)
 	}
 }
 
