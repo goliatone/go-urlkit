@@ -189,8 +189,8 @@ func TestMultiLocaleNavigationIntegration(t *testing.T) {
 			if node.URL != wantURL {
 				t.Fatalf("route %s expected URL %q, got %q", node.Route, wantURL, node.URL)
 			}
-			if node.Group != group.FullName() {
-				t.Fatalf("expected group name %q, got %q", group.FullName(), node.Group)
+			if node.Group != group.FQN() {
+				t.Fatalf("expected group name %q, got %q", group.FQN(), node.Group)
 			}
 			if !reflect.DeepEqual(node.Params, paramsFn(expectedLocale)(node.Route)) {
 				t.Fatalf("route %s params mismatch: %+v", node.Route, node.Params)

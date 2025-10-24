@@ -22,7 +22,7 @@ func TestEnsureGroupCreatesHierarchyAndDefaults(t *testing.T) {
 		t.Fatal("EnsureGroup returned nil group")
 	}
 
-	if got := blog.FullName(); got != "frontend.en.blog" {
+	if got := blog.FQN(); got != "frontend.en.blog" {
 		t.Fatalf("expected full name frontend.en.blog, got %s", got)
 	}
 

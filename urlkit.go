@@ -695,7 +695,7 @@ func (u *Group) Navigation(routes []string, params func(route string) Params) ([
 	}
 
 	nodes := make([]NavigationNode, 0, len(routes))
-	groupName := u.FullName()
+	groupName := u.FQN()
 
 	for _, routeName := range routes {
 		if routeName == "" {
@@ -743,11 +743,11 @@ func (u *Group) Navigation(routes []string, params func(route string) Params) ([
 	return nodes, nil
 }
 
-// FullName returns the dot-notated identifier for the group within the hierarchy.
+// FQN returns the group's fully qualified name within the hierarchy (dot notation).
 // Root groups return their own name, while nested groups include their ancestors
 // (e.g., "frontend.en.marketing"). An empty string indicates the group is detached
 // from the manager hierarchy.
-func (u *Group) FullName() string {
+func (u *Group) FQN() string {
 	if u == nil {
 		return ""
 	}
@@ -761,7 +761,7 @@ func (u *Group) FullName() string {
 		return name
 	}
 
-	parentName := parent.FullName()
+	parentName := parent.FQN()
 	if parentName == "" {
 		return name
 	}
