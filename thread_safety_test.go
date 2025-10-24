@@ -2,6 +2,7 @@ package urlkit
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -511,4 +512,65 @@ func TestTemplateHelperMemoryUsage(t *testing.T) {
 	// This test mainly ensures we don't crash or deadlock under memory pressure
 	// Memory leak detection would require additional tooling
 	t.Log("Memory usage test completed successfully")
+}
+
+func TestBuilderConcurrentUsage(t *testing.T) {
+	manager := NewRouteManager()
+	manager.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"profile":  "/users/:id",
+		"settings": "/users/:id/settings",
+	})
+
+	group := manager.Group("frontend")
+
+	const workers = 48
+	const iterations = 200
+
+	type userParams struct {
+		ID int `urlkit:"id"`
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			for i := 0; i < iterations; i++ {
+				id := workerID*iterations + i
+
+				// Build profile route using struct parameters
+				profileURL, err := group.Builder("profile").
+					WithStruct(userParams{ID: id}).
+					WithQuery("ref", fmt.Sprintf("worker-%d", workerID)).
+					Build()
+				if err != nil {
+					errCh <- fmt.Errorf("profile builder worker %d iteration %d: %w", workerID, i, err)
+					return
+				}
+				expectedPrefix := "https://example.com/users/"
+				if !strings.HasPrefix(profileURL, expectedPrefix) {
+					errCh <- fmt.Errorf("profile builder produced malformed URL: %s", profileURL)
+					return
+				}
+
+				// Build settings route using traditional params
+				if _, err := group.Builder("settings").
+					WithParam("id", id).
+					Build(); err != nil {
+					errCh <- fmt.Errorf("settings builder worker %d iteration %d: %w", workerID, i, err)
+					return
+				}
+			}
+		}(worker)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Error(err)
+	}
 }

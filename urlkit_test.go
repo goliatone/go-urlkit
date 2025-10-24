@@ -775,6 +775,109 @@ func TestNestedGroupValidationWithDotSeparatedRoutes(t *testing.T) {
 	}
 }
 
+func TestRouteManagerFromConfigLifecycle(t *testing.T) {
+	config := urlkit.Config{
+		Groups: []urlkit.GroupConfig{
+			{
+				Name:        "frontend",
+				BaseURL:     "https://example.com",
+				Routes:      map[string]string{"home": "/"},
+				URLTemplate: "{base_url}/{locale}{route_path}",
+				Groups: []urlkit.GroupConfig{
+					{
+						Name:         "en",
+						TemplateVars: map[string]string{"locale": "en"},
+						Routes: map[string]string{
+							"landing": "/landing",
+						},
+						Groups: []urlkit.GroupConfig{
+							{
+								Name:         "blog",
+								TemplateVars: map[string]string{"section": "blog"},
+								Routes: map[string]string{
+									"article": "/blog/:slug",
+								},
+							},
+						},
+					},
+					{
+						Name:         "es",
+						TemplateVars: map[string]string{"locale": "es"},
+						Routes: map[string]string{
+							"landing": "/inicio",
+						},
+						Groups: []urlkit.GroupConfig{
+							{
+								Name:         "blog",
+								TemplateVars: map[string]string{"section": "blog"},
+								Routes: map[string]string{
+									"article": "/blog/:slug",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	manager, err := urlkit.NewRouteManagerFromConfig(config)
+	if err != nil {
+		t.Fatalf("NewRouteManagerFromConfig returned error: %v", err)
+	}
+
+	expected := map[string][]string{
+		"frontend":         {"home"},
+		"frontend.en":      {"landing"},
+		"frontend.es":      {"landing"},
+		"frontend.en.blog": {"article"},
+		"frontend.es.blog": {"article"},
+	}
+
+	if err := manager.Validate(expected); err != nil {
+		t.Fatalf("route validation failed: %v", err)
+	}
+
+	enBlogURL, err := manager.Resolve("frontend.en.blog", "article", urlkit.Params{
+		"slug": "welcome",
+	}, urlkit.Query{"ref": "newsletter"})
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if want := "https://example.com/en/blog/welcome?ref=newsletter"; enBlogURL != want {
+		t.Fatalf("expected %q, got %q", want, enBlogURL)
+	}
+
+	type articleParams struct {
+		Slug string `urlkit:"slug"`
+	}
+
+	esBlogURL, err := manager.ResolveWith(
+		"frontend.es.blog",
+		"article",
+		articleParams{Slug: "hola"},
+		map[string]any{"utm_source": "cms"},
+	)
+	if err != nil {
+		t.Fatalf("ResolveWith returned error: %v", err)
+	}
+	if want := "https://example.com/es/blog/hola?utm_source=cms"; esBlogURL != want {
+		t.Fatalf("expected %q, got %q", want, esBlogURL)
+	}
+
+	blogGroup := manager.Group("frontend.es.blog")
+	vars := blogGroup.CollectTemplateVars()
+	if vars["locale"] != "es" {
+		t.Fatalf("expected locale var to be 'es', got %q", vars["locale"])
+	}
+	if vars["section"] != "blog" {
+		t.Fatalf("expected section var to be 'blog', got %q", vars["section"])
+	}
+	if _, ok := vars["route_path"]; ok {
+		t.Fatal("route_path should not be part of collected static template vars")
+	}
+}
+
 func TestNestedConfigurationParsing(t *testing.T) {
 	// Test JSON configuration parsing with nested groups
 	config := urlkit.Config{
