@@ -66,7 +66,7 @@ func groupDisplayName(u *Group) string {
 		return ""
 	}
 
-	if name := u.FullName(); name != "" {
+	if name := u.FQN(); name != "" {
 		return name
 	}
 
