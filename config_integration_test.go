@@ -13,6 +13,9 @@ func TestJSONConfigIntegrationLifecycle(t *testing.T) {
       "name": "cms",
       "base_url": "https://cms.example.com",
       "url_template": "{base_url}/{locale}{route_path}",
+      "template_vars": {
+        "route_path_suffix": ""
+      },
       "routes": {
         "home": "/"
       },
@@ -114,6 +117,9 @@ func TestMultiLocaleNavigationIntegration(t *testing.T) {
 				Name:        "frontend",
 				BaseURL:     "https://example.com",
 				URLTemplate: "{base_url}/{locale}{route_path}",
+				TemplateVars: map[string]string{
+					"route_path_suffix": "",
+				},
 				Groups: []GroupConfig{
 					{
 						Name:         "en",
