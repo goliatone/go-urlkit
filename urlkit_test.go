@@ -1,12 +1,18 @@
 package urlkit_test
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/goliatone/go-urlkit"
 )
+
+var _ urlkit.Resolver = (*urlkit.RouteManager)(nil)
 
 func TestJoinURL(t *testing.T) {
 	tests := []struct {
@@ -83,7 +89,7 @@ func TestGroupRender(t *testing.T) {
 		t.Errorf("Expected %q, got %q", expected, urlStr)
 	}
 
-	urlStr, err = group.Render("user", urlkit.Params{"id": "123"}, map[string]string{"active": "true"})
+	urlStr, err = group.Render("user", urlkit.Params{"id": "123"}, urlkit.Query{"active": "true"})
 	if err != nil {
 		t.Fatalf("Render returned error: %v", err)
 	}
@@ -148,19 +154,211 @@ func TestBuilderBuild(t *testing.T) {
 	}
 }
 
+func TestBuilderParamHelpers(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"product": "/products/:id/:locale",
+	})
+
+	type productParams struct {
+		Locale string `json:"locale"`
+	}
+
+	builder := rm.Group("api").Builder("product")
+	builder.WithParamsMap(map[string]any{"id": 42})
+	builder.WithStruct(productParams{Locale: "en"})
+	builder.WithStruct(&productParams{Locale: "fr"})
+	builder.WithQuery("sort", "desc")
+	builder.WithQueryValues(map[string][]string{
+		"tag": []string{"new", "sale"},
+	})
+
+	result, err := builder.Build()
+	if err != nil {
+		t.Fatalf("Builder.Build returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(result)
+	if err != nil {
+		t.Fatalf("Failed to parse generated URL: %v", err)
+	}
+
+	if parsed.Path != "/products/42/fr" {
+		t.Errorf("expected path /products/42/fr, got %s", parsed.Path)
+	}
+
+	values := parsed.Query()
+	if sortVal := values.Get("sort"); sortVal != "desc" {
+		t.Errorf("expected sort=desc, got %s", sortVal)
+	}
+
+	tags := values["tag"]
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 tag values, got %v", tags)
+	}
+	sort.Strings(tags)
+	if tags[0] != "new" || tags[1] != "sale" {
+		t.Errorf("expected tag values [new sale], got %v", tags)
+	}
+}
+
+func TestBuilderWithStructError(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"simple": "/simple",
+	})
+
+	builder := rm.Group("api").Builder("simple")
+	builder.WithStruct(123)
+
+	if _, err := builder.Build(); err == nil {
+		t.Fatal("expected error when using WithStruct with non-struct input")
+	}
+}
+
 func TestGroupRenderNoParams(t *testing.T) {
 	routes := map[string]string{
 		"home": "/",
 	}
 	group := urlkit.NewURIHelper("http://example.com", routes)
 
-	urlStr, err := group.Render("home", urlkit.Params{}, map[string]string{"lang": "en"})
+	urlStr, err := group.Render("home", urlkit.Params{}, urlkit.Query{"lang": "en"})
 	if err != nil {
 		t.Fatalf("Render returned error: %v", err)
 	}
 	expected := "http://example.com/?lang=en"
 	if urlStr != expected {
 		t.Errorf("Expected %q, got %q", expected, urlStr)
+	}
+}
+
+func TestGroupNavigation(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"home":    "/",
+		"about":   "/about",
+		"profile": "/users/:id",
+	})
+
+	group := rm.Group("frontend")
+	nodes, err := group.Navigation([]string{"home", "profile"}, func(route string) urlkit.Params {
+		if route == "profile" {
+			return urlkit.Params{"id": 42}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Navigation returned error: %v", err)
+	}
+
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 navigation nodes, got %d", len(nodes))
+	}
+
+	if nodes[0].FullRoute != "frontend.home" {
+		t.Errorf("expected first node full route frontend.home, got %s", nodes[0].FullRoute)
+	}
+	if nodes[0].URL != "https://example.com/" {
+		t.Errorf("expected home URL https://example.com/, got %s", nodes[0].URL)
+	}
+
+	if nodes[1].FullRoute != "frontend.profile" {
+		t.Errorf("expected second node full route frontend.profile, got %s", nodes[1].FullRoute)
+	}
+	if nodes[1].URL != "https://example.com/users/42" {
+		t.Errorf("expected profile URL https://example.com/users/42, got %s", nodes[1].URL)
+	}
+	if nodes[1].Params["id"] != 42 {
+		t.Errorf("expected profile params to contain id=42, got %v", nodes[1].Params)
+	}
+}
+
+func TestRouteManagerResolve(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"show": "/:slug",
+	})
+
+	urlStr, err := rm.Resolve("frontend", "show", urlkit.Params{"slug": "welcome"}, urlkit.Query{"lang": "en"})
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if expected := "https://example.com/welcome?lang=en"; urlStr != expected {
+		t.Errorf("expected %s, got %s", expected, urlStr)
+	}
+
+	blog, err := rm.EnsureGroup("frontend.blog")
+	if err != nil {
+		t.Fatalf("EnsureGroup failed: %v", err)
+	}
+	blog.AddRoutes(map[string]string{
+		"show": "/blog/:slug",
+	})
+
+	urlStr, err = rm.Resolve("frontend.blog", "show", urlkit.Params{"slug": "post"}, nil)
+	if err != nil {
+		t.Fatalf("Resolve for dot path failed: %v", err)
+	}
+	if expected := "https://example.com/blog/post"; urlStr != expected {
+		t.Errorf("expected %s, got %s", expected, urlStr)
+	}
+
+	if _, err := rm.Resolve("frontend", "missing", nil, nil); !errors.Is(err, urlkit.ErrRouteNotFound) {
+		t.Fatalf("expected ErrRouteNotFound, got %v", err)
+	}
+
+	if _, err := rm.Resolve("unknown", "show", nil, nil); !errors.Is(err, urlkit.ErrGroupNotFound) {
+		t.Fatalf("expected ErrGroupNotFound, got %v", err)
+	}
+}
+
+func TestRouteManagerResolveWith(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"order": "/orders/:id",
+	})
+
+	type orderParams struct {
+		ID int `json:"id"`
+	}
+
+	urlStr, err := rm.ResolveWith("api", "order", orderParams{ID: 7}, map[string][]string{
+		"expand": []string{"items", "payments"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveWith returned error: %v", err)
+	}
+
+	parsed, err := url.Parse(urlStr)
+	if err != nil {
+		t.Fatalf("Failed to parse ResolveWith URL: %v", err)
+	}
+
+	if parsed.Path != "/orders/7" {
+		t.Errorf("expected path /orders/7, got %s", parsed.Path)
+	}
+
+	values := parsed.Query()
+	expands := append([]string(nil), values["expand"]...)
+	sort.Strings(expands)
+	if !reflect.DeepEqual(expands, []string{"items", "payments"}) {
+		t.Errorf("expected expand values [items payments], got %v", values["expand"])
+	}
+
+	urlStr, err = rm.ResolveWith("api", "order", map[string]any{"id": 9}, map[string]any{
+		"expand": []any{"audit", "log"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveWith with map sources returned error: %v", err)
+	}
+
+	parsed, _ = url.Parse(urlStr)
+	if parsed.Path != "/orders/9" {
+		t.Errorf("expected path /orders/9, got %s", parsed.Path)
+	}
+
+	if expands := parsed.Query()["expand"]; len(expands) != 2 {
+		t.Fatalf("expected two expand parameters, got %v", expands)
 	}
 }
 

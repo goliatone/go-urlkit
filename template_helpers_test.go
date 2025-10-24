@@ -644,6 +644,71 @@ func TestCurrentRouteIfHelperIntegration(t *testing.T) {
 	}
 }
 
+func TestTemplateHelperAliases(t *testing.T) {
+	manager := NewRouteManager()
+	manager.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"home": "/",
+	})
+
+	config := DefaultTemplateHelperConfig()
+	helpers := TemplateHelpers(manager, config)
+
+	if helpers["URL"] == nil {
+		t.Fatal("expected URL alias to be registered")
+	}
+	if fmt.Sprintf("%p", helpers["URL"]) != fmt.Sprintf("%p", helpers["url"]) {
+		t.Error("URL alias should reference the same helper as url")
+	}
+
+	if helpers["RoutePath"] == nil {
+		t.Fatal("expected RoutePath alias to be registered")
+	}
+}
+
+func TestNavigationHelper(t *testing.T) {
+	manager := NewRouteManager()
+	manager.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"home":    "/",
+		"profile": "/users/:id",
+	})
+
+	config := DefaultTemplateHelperConfig()
+	helpers := TemplateHelpers(manager, config)
+
+	rawHelper, ok := helpers["Navigation"]
+	if !ok {
+		t.Fatal("Navigation helper not registered")
+	}
+
+	navFunc, ok := rawHelper.(func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error))
+	if !ok {
+		t.Fatal("Navigation helper has unexpected signature")
+	}
+
+	routes := pongo2.AsValue([]any{"home", "profile"})
+	params := pongo2.AsValue(map[string]any{
+		"profile": map[string]any{"id": 7},
+	})
+
+	result, perr := navFunc(pongo2.AsValue("frontend"), routes, params)
+	if perr != nil {
+		t.Fatalf("Navigation helper returned pongo error: %v", perr)
+	}
+
+	nodes, ok := result.Interface().([]NavigationNode)
+	if !ok {
+		t.Fatalf("expected []NavigationNode, got %T", result.Interface())
+	}
+
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 navigation nodes, got %d", len(nodes))
+	}
+
+	if nodes[1].URL != "https://example.com/users/7" {
+		t.Errorf("expected profile URL to include parameter, got %s", nodes[1].URL)
+	}
+}
+
 // TestURLHelper tests the url helper function comprehensively
 func TestURLHelper(t *testing.T) {
 	// Setup test route manager
