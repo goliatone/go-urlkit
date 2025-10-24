@@ -1,5 +1,19 @@
 # Changelog
 
+# [0.3.0](https://github.com/goliatone/go-urlkit/compare/v0.2.1...v0.3.0) - (2025-10-24)
+
+## <!-- 13 -->📦 Bumps
+
+- Bump version: v0.3.0 ([e55df4c](https://github.com/goliatone/go-urlkit/commit/e55df4caab236f02e6db0df45b68f2cd019436e6))  - (goliatone)
+
+## <!-- 2 -->🚜 Refactor
+
+- Use FQN instead of FullName ([96fadc9](https://github.com/goliatone/go-urlkit/commit/96fadc9c5c134dad0e7efa4e10b2ca54b02fd7a1))  - (goliatone)
+
+## <!-- 3 -->📚 Documentation
+
+- Update changelog for v0.2.1 ([4285404](https://github.com/goliatone/go-urlkit/commit/42854045b96ae9e1edfea693d99472519cb62f9f))  - (goliatone)
+
 # [0.2.1](https://github.com/goliatone/go-urlkit/compare/v0.2.0...v0.2.1) - (2025-10-24)
 
 ## <!-- 1 -->🐛 Bug Fixes
