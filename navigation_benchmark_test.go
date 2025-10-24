@@ -65,8 +65,7 @@ func BenchmarkNavigationRendering(b *testing.B) {
 			sectionName := section.name
 			sectionGroup := localeGroup.RegisterGroup(sectionName, section.path, section.routes)
 
-			routeNames := maps.Keys(section.routes)
-			slices.Sort(routeNames)
+			routeNames := slices.Sorted(maps.Keys(section.routes))
 
 			localeCopy := locale
 			sectionCopy := sectionName
