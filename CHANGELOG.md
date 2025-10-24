@@ -1,5 +1,32 @@
 # Changelog
 
+# [0.2.0](https://github.com/goliatone/go-urlkit/compare/v0.1.0...v0.2.0) - (2025-10-24)
+
+## <!-- 1 -->🐛 Bug Fixes
+
+- Harden path logic ([7e3c5d2](https://github.com/goliatone/go-urlkit/commit/7e3c5d218ffffa765ba11f2f6d3c63dfb94b00f6))  - (goliatone)
+
+## <!-- 13 -->📦 Bumps
+
+- Bump version: v0.2.0 ([e9f7ced](https://github.com/goliatone/go-urlkit/commit/e9f7ced1195ee3ab6edc19859c2b325143e1bf7f))  - (goliatone)
+
+## <!-- 16 -->➕ Add
+
+- Template helpers ([d40a0f7](https://github.com/goliatone/go-urlkit/commit/d40a0f7e67109ba7cf326f96b1e95b21c23c4c21))  - (goliatone)
+
+## <!-- 2 -->🚜 Refactor
+
+- Break down urlkit ([298256b](https://github.com/goliatone/go-urlkit/commit/298256b19f817b0dc7d91c799ec0cbad7e45de57))  - (goliatone)
+
+## <!-- 3 -->📚 Documentation
+
+- Update changelog for v0.1.0 ([19c4b33](https://github.com/goliatone/go-urlkit/commit/19c4b3327559f8d98e1e6b99c576af7dfe68a723))  - (goliatone)
+
+## <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Update tests ([602cf93](https://github.com/goliatone/go-urlkit/commit/602cf935bc1351a48064dbae507c8e25b70ec47c))  - (goliatone)
+- Update readme ([a47828a](https://github.com/goliatone/go-urlkit/commit/a47828a03b70b35bc078600243326c960a7bcf3d))  - (goliatone)
+
 # [0.1.0](https://github.com/goliatone/go-urlkit/tree/v0.1.0) - (2025-09-13)
 
 ## <!-- 1 -->🐛 Bug Fixes
