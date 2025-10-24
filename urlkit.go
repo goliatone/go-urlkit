@@ -1,6 +1,7 @@
 package urlkit
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -9,8 +10,28 @@ import (
 	ptre "github.com/soongo/path-to-regexp"
 )
 
-type Params map[string]any
+type Params = map[string]any
 type Query map[string]string
+
+var (
+	ErrGroupNotFound = errors.New("group not found")
+	ErrRouteNotFound = errors.New("route not found")
+)
+
+type Resolver interface {
+	Resolve(groupPath, route string, params Params, query Query) (string, error)
+}
+
+// NavigationNode represents a prebuilt navigation entry constructed from a group route.
+// It captures enough information for templates to render menus without recomputing URLs.
+type NavigationNode struct {
+	Group     string `json:"group"`      // Dot-qualified group name (e.g., "frontend.en")
+	Route     string `json:"route"`      // Route identifier within the group (e.g., "about")
+	FullRoute string `json:"full_route"` // Fully qualified route name (e.g., "frontend.en.about")
+	Path      string `json:"path"`       // Raw route template (e.g., "/about" or "/users/:id")
+	URL       string `json:"url"`        // Resolved URL including host/base path
+	Params    Params `json:"params,omitempty"`
+}
 
 type ValidationError struct {
 	Errors map[string][]string
@@ -37,17 +58,18 @@ type RouteManager struct {
 }
 
 type Config struct {
-	Groups []GroupConfig `json:"groups"`
+	Groups []GroupConfig `json:"groups" yaml:"groups"`
 }
 
-// GroupConfig defines the configuration structure for a group when loading from JSON.
-// It supports both traditional path concatenation and template-based URL generation.
+// GroupConfig defines the configuration structure for a group when loading from JSON/YAML.
+// It supports both traditional path concatenation and template based URL generation.
 type GroupConfig struct {
-	Name    string            `json:"name"`
-	BaseURL string            `json:"base_url,omitempty"`
-	Path    string            `json:"path,omitempty"`
-	Paths   map[string]string `json:"paths"`
-	Groups  []GroupConfig     `json:"groups,omitempty"`
+	Name    string            `json:"name" yaml:"name"`
+	BaseURL string            `json:"base_url,omitempty" yaml:"base_url,omitempty"`
+	Path    string            `json:"path,omitempty" yaml:"path,omitempty"`
+	Routes  map[string]string `json:"routes,omitempty" yaml:"routes,omitempty"`
+	Paths   map[string]string `json:"paths,omitempty" yaml:"paths,omitempty"` // legacy support
+	Groups  []GroupConfig     `json:"groups,omitempty" yaml:"groups,omitempty"`
 
 	// Template Configuration Fields
 
@@ -56,7 +78,7 @@ type GroupConfig struct {
 	// When set, this group becomes a template owner and uses template rendering
 	// instead of simple path concatenation. Template variables are substituted
 	// using {variable_name} syntax.
-	URLTemplate string `json:"url_template,omitempty"`
+	URLTemplate string `json:"url_template,omitempty" yaml:"url_template,omitempty"`
 
 	// TemplateVars contains key-value pairs that this group contributes to template rendering.
 	// Child groups can override parent variables, following a precedence rule where
@@ -64,7 +86,29 @@ type GroupConfig struct {
 	// Special variables:
 	//   - base_url: Automatically set to the group's base URL
 	//   - route_path: Automatically set to the compiled route path with parameters
-	TemplateVars map[string]string `json:"template_vars,omitempty"`
+	TemplateVars map[string]string `json:"template_vars,omitempty" yaml:"template_vars,omitempty"`
+}
+
+func (g GroupConfig) effectiveRoutes() map[string]string {
+	if len(g.Routes) > 0 {
+		return g.Routes
+	}
+	if len(g.Paths) > 0 {
+		return g.Paths
+	}
+	return map[string]string{}
+}
+
+func cloneRoutes(routes map[string]string) map[string]string {
+	if len(routes) == 0 {
+		return map[string]string{}
+	}
+
+	clone := make(map[string]string, len(routes))
+	for key, value := range routes {
+		clone[key] = value
+	}
+	return clone
 }
 
 // Configurator defines the interface for route manager configuration.
@@ -79,36 +123,24 @@ func (c Config) GetGroups() []GroupConfig {
 	return c.Groups
 }
 
-// NewRouteManagerFromConfig creates a new RouteManager from a Configurator.
-// This follows the configurator pattern used throughout the application.
-func NewRouteManagerFromConfig(config Configurator) *RouteManager {
-	cfg := &Config{
-		Groups: config.GetGroups(),
+// NewRouteManagerFromConfig creates a new RouteManager from a Configurator and validates
+// the hierarchy during construction.
+func NewRouteManagerFromConfig(config Configurator) (*RouteManager, error) {
+	manager := &RouteManager{
+		groups: map[string]*Group{},
 	}
-	return NewRouteManager(cfg)
-}
 
-// parseNestedGroups recursively processes nested groups in the configuration
-func (m *RouteManager) parseNestedGroups(config GroupConfig, parent *Group) {
-	for _, childConfig := range config.Groups {
-		childGroup := parent.RegisterGroup(childConfig.Name, childConfig.Path, childConfig.Paths)
-
-		if childConfig.BaseURL != "" {
-			panic(fmt.Errorf("nested group %s cannot specify base_url, only root groups can have base URLs", childConfig.Name))
-		}
-
-		// Set URL template if provided
-		if childConfig.URLTemplate != "" {
-			childGroup.SetURLTemplate(childConfig.URLTemplate)
-		}
-
-		// Set template variables if provided
-		for key, value := range childConfig.TemplateVars {
-			childGroup.SetTemplateVar(key, value)
-		}
-
-		m.parseNestedGroups(childConfig, childGroup)
+	if config == nil {
+		return manager, nil
 	}
+
+	for _, groupConfig := range config.GetGroups() {
+		if _, err := manager.loadGroupFromConfig(groupConfig, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	return manager, nil
 }
 
 func NewRouteManager(config ...*Config) *RouteManager {
@@ -119,28 +151,84 @@ func NewRouteManager(config ...*Config) *RouteManager {
 	// If config is provided, process it
 	if len(config) > 0 && config[0] != nil {
 		for _, groupConfig := range config[0].Groups {
-			manager.RegisterGroup(groupConfig.Name, groupConfig.BaseURL, groupConfig.Paths)
-			rootGroup := manager.Group(groupConfig.Name)
-
-			// Set URL template if provided
-			if groupConfig.URLTemplate != "" {
-				rootGroup.SetURLTemplate(groupConfig.URLTemplate)
+			if _, err := manager.loadGroupFromConfig(groupConfig, nil); err != nil {
+				panic(err)
 			}
-
-			// Set template variables if provided
-			for key, value := range groupConfig.TemplateVars {
-				rootGroup.SetTemplateVar(key, value)
-			}
-
-			manager.parseNestedGroups(groupConfig, rootGroup)
 		}
 	}
 
 	return manager
 }
 
+func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Group, error) {
+	if cfg.Name == "" {
+		return nil, fmt.Errorf("configuration error: group name is required")
+	}
+
+	routes := cloneRoutes(cfg.effectiveRoutes())
+
+	if parent == nil {
+		if _, exists := m.groups[cfg.Name]; exists {
+			return nil, fmt.Errorf("configuration error: duplicate root group %s", cfg.Name)
+		}
+
+		m.RegisterGroup(cfg.Name, cfg.BaseURL, routes)
+		group := m.Group(cfg.Name)
+		group.name = cfg.Name
+		group.path = cfg.Path
+
+		if cfg.URLTemplate != "" {
+			group.SetURLTemplate(cfg.URLTemplate)
+		}
+
+		for key, value := range cfg.TemplateVars {
+			group.SetTemplateVar(key, value)
+		}
+
+		for _, child := range cfg.Groups {
+			if child.BaseURL != "" {
+				return nil, fmt.Errorf("configuration error: nested group %s cannot specify base_url", child.Name)
+			}
+			if _, err := m.loadGroupFromConfig(child, group); err != nil {
+				return nil, err
+			}
+		}
+
+		return group, nil
+	}
+
+	if cfg.BaseURL != "" {
+		return nil, fmt.Errorf("configuration error: nested group %s cannot specify base_url", cfg.Name)
+	}
+
+	childGroup := parent.RegisterGroup(cfg.Name, cfg.Path, routes)
+	childGroup.name = cfg.Name
+
+	if cfg.URLTemplate != "" {
+		childGroup.SetURLTemplate(cfg.URLTemplate)
+	}
+
+	for key, value := range cfg.TemplateVars {
+		childGroup.SetTemplateVar(key, value)
+	}
+
+	for _, child := range cfg.Groups {
+		if child.BaseURL != "" {
+			return nil, fmt.Errorf("configuration error: nested group %s cannot specify base_url", child.Name)
+		}
+		if _, err := m.loadGroupFromConfig(child, childGroup); err != nil {
+			return nil, err
+		}
+	}
+
+	return childGroup, nil
+}
+
 func (m *RouteManager) RegisterGroup(name, baseURL string, routes map[string]string) *RouteManager {
 	if group, exists := m.groups[name]; exists {
+		if group.name == "" {
+			group.name = name
+		}
 		maps.Copy(m.groups[name].routes, routes)
 		for route, tpl := range routes {
 			group.compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
@@ -150,7 +238,9 @@ func (m *RouteManager) RegisterGroup(name, baseURL string, routes map[string]str
 			})
 		}
 	} else {
-		m.groups[name] = NewURIHelper(baseURL, routes)
+		group := NewURIHelper(baseURL, routes)
+		group.name = name
+		m.groups[name] = group
 	}
 	return m
 }
@@ -208,10 +298,36 @@ func (m *RouteManager) Validate(groups map[string][]string) error {
 	return nil
 }
 
-func (m *RouteManager) Group(name string) *Group {
-	group, exists := m.groups[name]
-	if !exists {
-		panic(fmt.Errorf("group %s not found", name))
+// GetGroup returns the group registered at the given path. The path may reference
+// nested groups using dot-notation (e.g., "frontend.en.marketing"). Returns
+// ErrGroupNotFound when the requested group does not exist.
+func (m *RouteManager) GetGroup(path string) (*Group, error) {
+	if path == "" {
+		return nil, fmt.Errorf("%w: empty group path", ErrGroupNotFound)
+	}
+
+	if group, ok := m.groups[path]; ok {
+		return group, nil
+	}
+
+	var group *Group
+	if strings.Contains(path, ".") {
+		group = m.findGroupByPath(path)
+	} else {
+		group = m.groups[path]
+	}
+
+	if group == nil {
+		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, path)
+	}
+
+	return group, nil
+}
+
+func (m *RouteManager) Group(path string) *Group {
+	group, err := m.GetGroup(path)
+	if err != nil {
+		panic(err)
 	}
 	return group
 }
@@ -224,7 +340,16 @@ func (m *RouteManager) findGroupByPath(path string) *Group {
 	}
 
 	// Split the path by dots to get individual group names
-	parts := strings.Split(path, ".")
+	rawParts := strings.Split(path, ".")
+	parts := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil
+		}
+		parts = append(parts, part)
+	}
+
 	if len(parts) == 0 {
 		return nil
 	}
@@ -251,6 +376,74 @@ func (m *RouteManager) findGroupByPath(path string) *Group {
 	}
 
 	return currentGroup
+}
+
+// EnsureGroup ensures that the full group path exists, creating intermediate
+// groups as needed. The path must start with an existing root group name.
+// Intermediate segments can optionally define a custom path using the syntax
+// "name:/custom-path". Missing segments default to "/name". Returns the final
+// group or an ErrGroupNotFound if the root group does not exist.
+func (m *RouteManager) EnsureGroup(path string) (*Group, error) {
+	if path == "" {
+		return nil, fmt.Errorf("%w: empty group path", ErrGroupNotFound)
+	}
+
+	if group, err := m.GetGroup(path); err == nil {
+		return group, nil
+	}
+
+	parts := strings.Split(path, ".")
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("%w: empty group path", ErrGroupNotFound)
+	}
+
+	root, err := m.GetGroup(parts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	current := root
+	for idx, rawSegment := range parts[1:] {
+		name, segmentPath, err := parseEnsureSegment(rawSegment)
+		if err != nil {
+			return nil, fmt.Errorf("ensure group: %w", err)
+		}
+
+		if child, ok := current.children[name]; ok {
+			current = child
+			continue
+		}
+
+		current = current.RegisterGroup(name, segmentPath, map[string]string{})
+		// Guarantee name for newly created group (RegisterGroup already sets it,
+		// but this keeps the intent explicit).
+		current.name = name
+
+		if current.path == "" {
+			current.path = segmentPath
+		}
+
+		// Protect against accidental empty paths to maintain hierarchy integrity.
+		if current.path == "" {
+			return nil, fmt.Errorf("ensure group: empty path for segment %q at position %d", name, idx+2)
+		}
+	}
+
+	return current, nil
+}
+
+// AddRoutes attaches additional routes to an existing group identified by the
+// provided path. Routes in the map are compiled immediately and overwrite any
+// existing routes with the same name. The path supports dot-notation for nested
+// groups.
+func (m *RouteManager) AddRoutes(path string, routes map[string]string) (*Group, error) {
+	group, err := m.GetGroup(path)
+	if err != nil {
+		return nil, err
+	}
+
+	group.AddRoutes(routes)
+	return group, nil
 }
 
 // Group represents a collection of routes with optional templating capabilities.
@@ -327,7 +520,7 @@ func (u *Group) Validate(routes []string) error {
 func (u *Group) Render(routeName string, params Params, queries ...Query) (string, error) {
 	compiled, ok := u.compiledRoutes[routeName]
 	if !ok {
-		return "", fmt.Errorf("route %s not found", routeName)
+		return "", fmt.Errorf("%w: route %q in group %s", ErrRouteNotFound, routeName, groupDisplayName(u))
 	}
 
 	// Check if template rendering mode is available
@@ -354,7 +547,7 @@ func (u *Group) Render(routeName string, params Params, queries ...Query) (strin
 func (u *Group) Route(routeName string) (string, error) {
 	route, ok := u.routes[routeName]
 	if !ok {
-		return "", fmt.Errorf("route %s not found", routeName)
+		return "", fmt.Errorf("%w: route %q in group %s", ErrRouteNotFound, routeName, groupDisplayName(u))
 	}
 	return route, nil
 }
@@ -381,7 +574,7 @@ func (u *Group) Builder(routeName string) *Builder {
 func (u *Group) Group(name string) *Group {
 	group, exists := u.children[name]
 	if !exists {
-		panic(fmt.Errorf("group %s not found", name))
+		panic(fmt.Errorf("%w: %s.%s", ErrGroupNotFound, groupDisplayName(u), name))
 	}
 	return group
 }
@@ -390,8 +583,7 @@ func (u *Group) Group(name string) *Group {
 // It accumulates path segments from child to root, excluding the route itself.
 func (u *Group) getFullPath() string {
 	if u.parent == nil {
-		// Root group - return empty string as base URL handles the prefix
-		return ""
+		return u.path
 	}
 
 	parentPath := u.parent.getFullPath()
@@ -404,6 +596,87 @@ func (u *Group) getRootGroup() *Group {
 		return u
 	}
 	return u.parent.getRootGroup()
+}
+
+// Navigation builds a slice of NavigationNode entries for the provided routes.
+// The params callback can supply per-route parameter maps which are applied before building URLs.
+func (u *Group) Navigation(routes []string, params func(route string) Params) ([]NavigationNode, error) {
+	if len(routes) == 0 {
+		return []NavigationNode{}, nil
+	}
+
+	nodes := make([]NavigationNode, 0, len(routes))
+	groupName := u.FullName()
+
+	for _, routeName := range routes {
+		if routeName == "" {
+			continue
+		}
+
+		builder := u.Builder(routeName)
+
+		var providedParams Params
+		if params != nil {
+			providedParams = params(routeName)
+		}
+
+		if len(providedParams) > 0 {
+			for key, value := range providedParams {
+				builder.WithParam(key, value)
+			}
+		}
+
+		urlValue, err := builder.Build()
+		if err != nil {
+			return nil, err
+		}
+
+		routePattern, err := u.Route(routeName)
+		if err != nil {
+			return nil, err
+		}
+
+		fullRoute := routeName
+		if groupName != "" {
+			fullRoute = groupName + "." + routeName
+		}
+
+		nodes = append(nodes, NavigationNode{
+			Group:     groupName,
+			Route:     routeName,
+			FullRoute: fullRoute,
+			Path:      routePattern,
+			URL:       urlValue,
+			Params:    cloneParamsMap(providedParams),
+		})
+	}
+
+	return nodes, nil
+}
+
+// FullName returns the dot-notated identifier for the group within the hierarchy.
+// Root groups return their own name, while nested groups include their ancestors
+// (e.g., "frontend.en.marketing"). An empty string indicates the group is detached
+// from the manager hierarchy.
+func (u *Group) FullName() string {
+	if u == nil {
+		return ""
+	}
+
+	if u.parent == nil {
+		return u.name
+	}
+
+	parentName := u.parent.FullName()
+	if parentName == "" {
+		return u.name
+	}
+
+	if u.name == "" {
+		return parentName
+	}
+
+	return parentName + "." + u.name
 }
 
 // RegisterGroup creates and registers a new child group under the current group.
@@ -506,8 +779,9 @@ func (u *Group) GetTemplateVar(key string) (string, bool) {
 }
 
 // AddRoutes dynamically adds new routes to this group at runtime.
-// Routes are immediately compiled and available for URL building. This method is useful
-// for conditional route registration or dynamic route generation based on configuration.
+// Routes are immediately compiled and available for URL building. Existing routes with the
+// same name are replaced and recompiled. This method is useful for conditional route
+// registration or dynamic route generation based on configuration.
 //
 // Parameters:
 //   - routes: a map of route names to path templates (e.g., "users": "/users/:id")
@@ -725,68 +999,4 @@ func SubstituteTemplate(template string, vars map[string]string) string {
 	}
 
 	return result
-}
-
-type Builder struct {
-	helper    *Group
-	routeName string
-	params    Params
-	query     Query
-}
-
-func (b *Builder) WithParam(key string, value any) *Builder {
-	b.params[key] = fmt.Sprint(value)
-	return b
-}
-
-func (b *Builder) WithQuery(key string, value any) *Builder {
-	b.query[key] = fmt.Sprint(value)
-	return b
-}
-
-func (b *Builder) Build() (string, error) {
-	return b.helper.Render(b.routeName, b.params, b.query)
-}
-
-func (b *Builder) MustBuild() string {
-	s, err := b.Build()
-	if err != nil {
-		panic(err)
-	}
-	return s
-}
-
-func JoinURL(base, path string, queries ...Query) string {
-	u, err := url.Parse(base)
-	if err != nil {
-		//hack... if base cant be parsed, we trait as a string
-		u = &url.URL{Path: base}
-	}
-
-	if strings.HasPrefix(path, "/") {
-		u.Path = path
-	} else {
-		if !strings.HasSuffix(u.Path, "/") {
-			u.Path += "/"
-		}
-		u.Path += path
-	}
-
-	qs := []string{}
-	for _, query := range queries {
-		for k, v := range query {
-			qs = append(qs, k+"="+url.QueryEscape(v))
-		}
-	}
-
-	rawQuery := strings.Join(qs, "&")
-	if u.RawQuery != "" {
-		if rawQuery != "" {
-			u.RawQuery = u.RawQuery + "&" + rawQuery
-		}
-	} else {
-		u.RawQuery = rawQuery
-	}
-
-	return u.String()
 }
