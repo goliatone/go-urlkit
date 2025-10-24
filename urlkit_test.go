@@ -783,6 +783,9 @@ func TestRouteManagerFromConfigLifecycle(t *testing.T) {
 				BaseURL:     "https://example.com",
 				Routes:      map[string]string{"home": "/"},
 				URLTemplate: "{base_url}/{locale}{route_path}",
+				TemplateVars: map[string]string{
+					"route_path_suffix": "",
+				},
 				Groups: []urlkit.GroupConfig{
 					{
 						Name:         "en",

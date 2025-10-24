@@ -1035,6 +1035,14 @@ func (u *Group) renderTemplatedURL(routeName string, compiled func(any) (string,
 	// Collect template variables from the hierarchy
 	templateVars := u.CollectTemplateVars()
 
+	// Determine optional route path suffix behavior.
+	routePathSuffix, hasSuffix := templateVars["route_path_suffix"]
+	if !hasSuffix {
+		routePathSuffix = "/"
+	}
+
+	routePath = applyRoutePathSuffix(routePath, routePathSuffix)
+
 	// Add dynamic variables
 	templateVars["route_path"] = routePath
 	root := u.getRootGroup()
@@ -1110,6 +1118,25 @@ func SubstituteTemplate(template string, vars map[string]string) string {
 	}
 
 	return result
+}
+
+func applyRoutePathSuffix(routePath, suffix string) string {
+	if routePath == "" || suffix == "" {
+		return routePath
+	}
+
+	// Avoid duplicating the suffix if it's already present.
+	if strings.HasSuffix(routePath, suffix) {
+		return routePath
+	}
+
+	// Special case: if the route resolves to root and suffix indicates "/",
+	// keep single slash to avoid generating "//".
+	if suffix == "/" && routePath == "/" {
+		return routePath
+	}
+
+	return routePath + suffix
 }
 
 var placeholderPattern = regexp.MustCompile(`\{([a-zA-Z0-9_]+)\}`)
