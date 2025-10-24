@@ -1976,6 +1976,79 @@ func TestStringSubstitutionWithVariousPlaceholderFormats(t *testing.T) {
 	}
 }
 
+func TestRenderTemplateMissingVariablesReturnsDetailedError(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"home": "/",
+	})
+
+	frontend := rm.Group("frontend")
+	frontend.SetURLTemplate("{base_url}/{locale}{route_path}")
+
+	_, err := frontend.Builder("home").Build()
+	if err == nil {
+		t.Fatal("expected error when template variable is missing, got nil")
+	}
+
+	var templateErr urlkit.TemplateSubstitutionError
+	if !errors.As(err, &templateErr) {
+		t.Fatalf("expected TemplateSubstitutionError, got %T: %v", err, err)
+	}
+
+	expectedMissing := []string{"locale"}
+	if !reflect.DeepEqual(templateErr.Missing, expectedMissing) {
+		t.Fatalf("expected missing variables %v, got %v", expectedMissing, templateErr.Missing)
+	}
+
+	if templateErr.Group != "frontend" {
+		t.Errorf("expected group 'frontend', got %q", templateErr.Group)
+	}
+
+	if templateErr.TemplateOwner != "frontend" {
+		t.Errorf("expected template owner 'frontend', got %q", templateErr.TemplateOwner)
+	}
+
+	if !strings.Contains(err.Error(), "locale") {
+		t.Errorf("expected error message to mention missing variable, got %v", err)
+	}
+}
+
+func TestRouteManagerDebugTreeIncludesHierarchy(t *testing.T) {
+	rm := urlkit.NewRouteManager()
+	rm.RegisterGroup("frontend", "https://example.com", map[string]string{
+		"home":  "/",
+		"about": "/about",
+	})
+
+	frontend := rm.Group("frontend")
+	frontend.SetURLTemplate("{base_url}/{locale}{route_path}")
+	frontend.SetTemplateVar("locale", "en")
+
+	en := frontend.RegisterGroup("en", "/en", map[string]string{
+		"contact": "/contact",
+	})
+	en.SetTemplateVar("region", "us")
+
+	output := rm.DebugTree()
+
+	expectedFragments := []string{
+		"RouteManager Debug Tree:",
+		"- frontend (base=\"https://example.com\")",
+		"  template: \"{base_url}/{locale}{route_path}\"",
+		"  vars:\n    locale = \"en\"",
+		"  routes:\n    - about: /about\n    - home: /",
+		"  - frontend.en (path=\"/en\")",
+		"    vars:\n      locale = \"en\"\n      region = \"us\"",
+		"    routes:\n      - contact: /contact",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(output, fragment) {
+			t.Errorf("DebugTree output missing fragment %q\nOutput:\n%s", fragment, output)
+		}
+	}
+}
+
 func TestTemplateOwnerDiscoveryLogic(t *testing.T) {
 	// Test template owner discovery in group hierarchy
 	rm := urlkit.NewRouteManager()
