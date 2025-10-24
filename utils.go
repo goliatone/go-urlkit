@@ -2,8 +2,10 @@ package urlkit
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -19,20 +21,42 @@ func JoinURL(base, path string, queries ...Query) string {
 			u.Path = path
 		} else {
 			if !strings.HasSuffix(u.Path, "/") {
-				u.Path += "/"
+				if u.Path == "" {
+					u.Path = "/"
+				} else {
+					u.Path += "/"
+				}
 			}
 			u.Path += path
 		}
 	}
 
-	values := u.Query()
-	for _, query := range queries {
-		for key, value := range query {
-			values.Add(key, value)
+	if len(queries) > 0 {
+		var newPairs []string
+		for _, query := range queries {
+			if len(query) == 0 {
+				continue
+			}
+			keys := slices.Sorted(maps.Keys(query))
+			for _, key := range keys {
+				newPairs = append(newPairs, encodeQueryPair(key, query[key]))
+			}
+		}
+
+		if len(newPairs) > 0 {
+			var builder strings.Builder
+			if existing := u.RawQuery; existing != "" {
+				builder.WriteString(existing)
+			}
+			for _, pair := range newPairs {
+				if builder.Len() > 0 {
+					builder.WriteByte('&')
+				}
+				builder.WriteString(pair)
+			}
+			u.RawQuery = builder.String()
 		}
 	}
-
-	u.RawQuery = values.Encode()
 
 	return u.String()
 }
@@ -46,11 +70,16 @@ func groupDisplayName(u *Group) string {
 		return name
 	}
 
-	if u.name != "" {
-		return u.name
+	u.mu.RLock()
+	name := u.name
+	parent := u.parent
+	u.mu.RUnlock()
+
+	if name != "" {
+		return name
 	}
 
-	if u.parent == nil {
+	if parent == nil {
 		return "(root)"
 	}
 
@@ -76,13 +105,17 @@ func combineQueries(single Query, multi map[string][]string) []Query {
 		queries = append(queries, cloneQuery(single))
 	}
 
-	for key, values := range multi {
-		if len(values) == 0 {
-			queries = append(queries, Query{key: ""})
-			continue
-		}
-		for _, value := range values {
-			queries = append(queries, Query{key: fmt.Sprint(value)})
+	if len(multi) > 0 {
+		keys := slices.Sorted(maps.Keys(multi))
+		for _, key := range keys {
+			values := multi[key]
+			if len(values) == 0 {
+				queries = append(queries, Query{key: ""})
+				continue
+			}
+			for _, value := range values {
+				queries = append(queries, Query{key: fmt.Sprint(value)})
+			}
 		}
 	}
 
@@ -131,11 +164,11 @@ func mergeParamsInput(target Params, input any) error {
 	}
 
 	switch v := input.(type) {
-	case Params:
-		for key, value := range v {
-			target[key] = fmt.Sprint(value)
-		}
-		return nil
+	// case Params:
+	// 	for key, value := range v {
+	// 		target[key] = fmt.Sprint(value)
+	// 	}
+	// 	return nil
 	case map[string]any:
 		for key, value := range v {
 			target[key] = fmt.Sprint(value)
@@ -305,4 +338,100 @@ func parseEnsureSegment(segment string) (string, string, error) {
 	}
 
 	return name, customPath, nil
+}
+
+func encodeQueryPair(key, value string) string {
+	return url.QueryEscape(key) + "=" + url.QueryEscape(value)
+}
+
+func joinURLPath(prefix, route string) string {
+	prefixSegments, _, prefixIsRoot := splitPathSegments(prefix)
+	routeSegments, routeHasTrailing, routeIsRoot := splitPathSegments(route)
+
+	overlap := longestOverlap(prefixSegments, routeSegments)
+
+	merged := make([]string, len(prefixSegments))
+	copy(merged, prefixSegments)
+	merged = append(merged, routeSegments[overlap:]...)
+
+	// Handle special case: prefix is "/" and route starts with "/"
+	// This should preserve the empty segment creating "//"
+	if prefixIsRoot && len(prefixSegments) == 0 && len(routeSegments) > 0 {
+		merged = append([]string{""}, merged...)
+	}
+
+	if len(merged) == 0 {
+		switch {
+		case routeIsRoot && prefix == "":
+			return "/"
+		case routeIsRoot:
+			base := ensureLeadingSlash(prefix)
+			if base == "" {
+				return "/"
+			}
+			if !strings.HasSuffix(base, "/") {
+				base += "/"
+			}
+			return base
+		case prefix != "":
+			return ensureLeadingSlash(prefix)
+		case route != "":
+			return ensureLeadingSlash(route)
+		default:
+			return ""
+		}
+	}
+
+	path := "/" + strings.Join(merged, "/")
+	if routeHasTrailing && !strings.HasSuffix(path, "/") {
+		path += "/"
+	}
+	return path
+}
+
+func splitPathSegments(path string) (segments []string, hasTrailing bool, isRoot bool) {
+	switch path {
+	case "":
+		return nil, false, false
+	case "/":
+		return nil, true, true
+	}
+
+	hasTrailing = strings.HasSuffix(path, "/")
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return nil, hasTrailing, false
+	}
+
+	return strings.Split(trimmed, "/"), hasTrailing, false
+}
+
+func longestOverlap(prefix, route []string) int {
+	if len(prefix) == 0 || len(route) == 0 {
+		return 0
+	}
+	max := minInt(len(prefix), len(route))
+	for k := max; k > 0; k-- {
+		if slices.Equal(prefix[len(prefix)-k:], route[:k]) {
+			return k
+		}
+	}
+	return 0
+}
+
+func ensureLeadingSlash(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "/") {
+		return path
+	}
+	return "/" + path
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
