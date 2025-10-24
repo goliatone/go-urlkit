@@ -1,5 +1,19 @@
 # Changelog
 
+# [0.2.1](https://github.com/goliatone/go-urlkit/compare/v0.2.0...v0.2.1) - (2025-10-24)
+
+## <!-- 1 -->🐛 Bug Fixes
+
+- Route suffix ([2c4ac3f](https://github.com/goliatone/go-urlkit/commit/2c4ac3f89592429b7e1b09a2305b0d662368eb5d))  - (goliatone)
+
+## <!-- 13 -->📦 Bumps
+
+- Bump version: v0.2.1 ([11bfc0c](https://github.com/goliatone/go-urlkit/commit/11bfc0ceb46ab9acb80252303330e17230dff82f))  - (goliatone)
+
+## <!-- 3 -->📚 Documentation
+
+- Update changelog for v0.2.0 ([5d7cd7c](https://github.com/goliatone/go-urlkit/commit/5d7cd7c64a3e6178ee6cf31b23c9ba26e8c9798e))  - (goliatone)
+
 # [0.2.0](https://github.com/goliatone/go-urlkit/compare/v0.1.0...v0.2.0) - (2025-10-24)
 
 ## <!-- 1 -->🐛 Bug Fixes
