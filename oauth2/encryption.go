@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 var (
@@ -19,6 +20,8 @@ var (
 	ErrSerializationFailed   = errors.New("failed to serialize state data")
 	ErrDeserializationFailed = errors.New("failed to deserialize state data")
 )
+
+const stateEncryptionPrefix = "v1:"
 
 // EncryptState serializes and encrypts the data with the state
 func EncryptState[T any](key []byte, state string, data T) (string, error) {
@@ -35,36 +38,79 @@ func EncryptState[T any](key []byte, state string, data T) (string, error) {
 		return "", fmt.Errorf("%w: %w", ErrSerializationFailed, err)
 	}
 
-	// we encrypt using AES
+	// Encrypt using AES-GCM for confidentiality and integrity.
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrEncryptionFailed, err)
 	}
 
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrEncryptionFailed, err)
 	}
 
-	paddedData := pkcs7Pad(jsonData, aes.BlockSize)
-	ciphertext := make([]byte, len(paddedData))
-	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(ciphertext, paddedData)
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrEncryptionFailed, err)
+	}
 
-	encryptedData := append(iv, ciphertext...)
-	return base64.URLEncoding.EncodeToString(encryptedData), nil
+	ciphertext := gcm.Seal(nil, nonce, jsonData, nil)
+	encryptedData := append(nonce, ciphertext...)
+	return stateEncryptionPrefix + base64.URLEncoding.EncodeToString(encryptedData), nil
 }
 
 // DecryptState decrypts and deserializes the encrypted state
 func DecryptState[T any](key []byte, state string) (string, T, error) {
 	var empty T
 
+	isV1 := strings.HasPrefix(state, stateEncryptionPrefix)
+	payload := state
+	if isV1 {
+		payload = strings.TrimPrefix(state, stateEncryptionPrefix)
+	}
+
 	// base64 decode
-	encryptedData, err := base64.URLEncoding.DecodeString(state)
+	encryptedData, err := base64.URLEncoding.DecodeString(payload)
 	if err != nil {
 		return "", empty, fmt.Errorf("%w: %w", ErrDecryptionFailed, err)
 	}
 
+	if isV1 {
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return "", empty, fmt.Errorf("%w: %w", ErrDecryptionFailed, err)
+		}
+
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return "", empty, fmt.Errorf("%w: %w", ErrDecryptionFailed, err)
+		}
+
+		nonceSize := gcm.NonceSize()
+		if len(encryptedData) < nonceSize {
+			return "", empty, fmt.Errorf("%w: encrypted data too short", ErrDecryptionFailed)
+		}
+
+		nonce := encryptedData[:nonceSize]
+		ciphertext := encryptedData[nonceSize:]
+
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			return "", empty, fmt.Errorf("%w: %v", ErrDecryptionFailed, err)
+		}
+
+		var wrapper struct {
+			OriginalState string `json:"original_state"`
+			Data          T      `json:"data"`
+		}
+		if err := json.Unmarshal(plaintext, &wrapper); err != nil {
+			return "", empty, fmt.Errorf("%w: %v", ErrDeserializationFailed, err)
+		}
+
+		return wrapper.OriginalState, wrapper.Data, nil
+	}
+
+	// Legacy CBC fallback (unauthenticated).
 	// need at leas IV + one block of data
 	if len(encryptedData) < aes.BlockSize*2 {
 		return "", empty, fmt.Errorf("%w: encrypted data too short", ErrDecryptionFailed)
