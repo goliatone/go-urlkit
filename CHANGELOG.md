@@ -1,5 +1,27 @@
 # Changelog
 
+# [0.5.0](https://github.com/goliatone/go-urlkit/compare/v0.4.0...v0.5.0) - (2026-02-05)
+
+## <!-- 1 -->🐛 Bug Fixes
+
+- Encrypt session using AES-GCM ([78ce3b5](https://github.com/goliatone/go-urlkit/commit/78ce3b5e2647dbe1e6825905fc56897c1cbd8517))  - (goliatone)
+- Template helper return path query ([4e69994](https://github.com/goliatone/go-urlkit/commit/4e69994abe177eba37cfc4ae1e3b87d44c9413be))  - (goliatone)
+- Prevent droping prefix path ([153c5d9](https://github.com/goliatone/go-urlkit/commit/153c5d91c68455d3cb96f188624089a48488b4a4))  - (goliatone)
+
+## <!-- 13 -->📦 Bumps
+
+- Bump version: v0.5.0 ([05937ff](https://github.com/goliatone/go-urlkit/commit/05937ffda73608349cc13b379e92e2a50ad92d27))  - (goliatone)
+
+## <!-- 3 -->📚 Documentation
+
+- Update changelog for v0.4.0 ([e0333b4](https://github.com/goliatone/go-urlkit/commit/e0333b4432d7f5fe971dbbfad12c51f304cee41f))  - (goliatone)
+
+## <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Update test ([ec35228](https://github.com/goliatone/go-urlkit/commit/ec352283a93cd7d651b950b72419814c0dd1ed8c))  - (goliatone)
+- Update readme ([c0d8b79](https://github.com/goliatone/go-urlkit/commit/c0d8b7941705d134e87cf0f473e86e3cac5a1e63))  - (goliatone)
+- Update examples ([de61bff](https://github.com/goliatone/go-urlkit/commit/de61bffd4689cfb9ab7288d7e8b47b4fd8cbd161))  - (goliatone)
+
 # [0.4.0](https://github.com/goliatone/go-urlkit/compare/v0.3.0...v0.4.0) - (2026-02-05)
 
 ## <!-- 13 -->📦 Bumps
