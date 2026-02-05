@@ -1,5 +1,25 @@
 # Changelog
 
+# [0.4.0](https://github.com/goliatone/go-urlkit/compare/v0.3.0...v0.4.0) - (2026-02-05)
+
+## <!-- 13 -->📦 Bumps
+
+- Bump version: v0.4.0 ([b130c74](https://github.com/goliatone/go-urlkit/commit/b130c743f4f6c9ae7748a90b980bc4dfe2bfbd9e))  - (goliatone)
+
+## <!-- 16 -->➕ Add
+
+- RouteTemplate helper ([a35aa6f](https://github.com/goliatone/go-urlkit/commit/a35aa6f16aaa544d52df55802ee2f1e3b9997319))  - (goliatone)
+- RoutePath helper ([a8bb023](https://github.com/goliatone/go-urlkit/commit/a8bb02319c781c35201d45fc15706d20a693c415))  - (goliatone)
+
+## <!-- 3 -->📚 Documentation
+
+- Update changelog for v0.3.0 ([eb72c65](https://github.com/goliatone/go-urlkit/commit/eb72c654a888d448cd6fdaa535301f6809f01e6c))  - (goliatone)
+
+## <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Update readme ([db7c472](https://github.com/goliatone/go-urlkit/commit/db7c472ed302f4274b89b3131bfa3d2996439c1d))  - (goliatone)
+- Update test ([4a9fa70](https://github.com/goliatone/go-urlkit/commit/4a9fa7052e28eff8b9f4a59f59428460d870deaf))  - (goliatone)
+
 # [0.3.0](https://github.com/goliatone/go-urlkit/compare/v0.2.1...v0.3.0) - (2025-10-24)
 
 ## <!-- 13 -->📦 Bumps
