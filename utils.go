@@ -18,7 +18,11 @@ func JoinURL(base, path string, queries ...Query) string {
 
 	if path != "" {
 		if strings.HasPrefix(path, "/") {
-			u.Path = path
+			if u.Path == "" || u.Path == "/" {
+				u.Path = path
+			} else {
+				u.Path = joinURLPath(u.Path, path)
+			}
 		} else {
 			if !strings.HasSuffix(u.Path, "/") {
 				if u.Path == "" {
