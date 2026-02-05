@@ -1,0 +1,126 @@
+{
+  "url_manager": {
+    "groups": [
+      {
+        "name": "frontend",
+        "base_url": "https://example.com",
+        "routes": {
+          "home": "/",
+          "auth.callback": "/integrations/:provider/:service/:id",
+          "auth.callback.error": "/integrations/:provider/:service/error"
+        },
+        "groups": [
+          {
+            "name": "en",
+            "path": "/en",
+            "routes": {
+              "about": "/about-us",
+              "contact": "/contact",
+              "products": "/products/:category",
+              "product-detail": "/products/:category/:productId"
+            },
+            "groups": [
+              {
+                "name": "help",
+                "path": "/help",
+                "routes": {
+                  "faq": "/faq",
+                  "support": "/support/:ticketId?",
+                  "guides": "/guides/:guideId"
+                }
+              }
+            ]
+          },
+          {
+            "name": "es",
+            "path": "/es",
+            "routes": {
+              "about": "/acerca-de",
+              "contact": "/contacto",
+              "products": "/productos/:category",
+              "product-detail": "/productos/:category/:productId"
+            },
+            "groups": [
+              {
+                "name": "help",
+                "path": "/ayuda",
+                "routes": {
+                  "faq": "/preguntas-frecuentes",
+                  "support": "/soporte/:ticketId?",
+                  "guides": "/guias/:guideId"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "api",
+        "base_url": "https://api.example.com",
+        "routes": {
+          "status": "/status",
+          "health": "/health"
+        },
+        "groups": [
+          {
+            "name": "v1",
+            "path": "/v1",
+            "routes": {
+              "users": "/users/:id",
+              "posts": "/posts",
+              "comments": "/comments/:postId"
+            },
+            "groups": [
+              {
+                "name": "admin",
+                "path": "/admin",
+                "routes": {
+                  "dashboard": "/dashboard",
+                  "settings": "/settings/:section",
+                  "users-management": "/users/:userId/manage",
+                  "reports": "/reports/:reportType/:date?"
+                }
+              }
+            ]
+          },
+          {
+            "name": "v2",
+            "path": "/v2",
+            "routes": {
+              "users": "/users/:id",
+              "profiles": "/users/:id/profile",
+              "organizations": "/orgs/:orgId",
+              "teams": "/orgs/:orgId/teams/:teamId?"
+            }
+          }
+        ]
+      },
+      {
+        "name": "webhooks",
+        "base_url": "https://webhooks.example.com",
+        "routes": {
+          "status": "/status"
+        },
+        "groups": [
+          {
+            "name": "github",
+            "path": "/github",
+            "routes": {
+              "push": "/push/:repoId",
+              "pull-request": "/pr/:repoId/:prId",
+              "issues": "/issues/:repoId/:issueId?"
+            }
+          },
+          {
+            "name": "slack",
+            "path": "/slack",
+            "routes": {
+              "message": "/message/:channelId",
+              "command": "/command/:workspaceId/:commandId"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

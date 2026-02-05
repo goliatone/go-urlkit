@@ -1,0 +1,170 @@
+{
+  "groups": [
+    {
+      "name": "i18n_frontend",
+      "base_url": "https://example.com",
+      "url_template": "https://{subdomain}.{domain}/{locale}{route_path}",
+      "template_vars": {
+        "subdomain": "www",
+        "domain": "example.com"
+      },
+      "routes": {
+        "home": "/",
+        "auth.callback": "/integrations/:provider/:service/:id",
+        "auth.callback.error": "/integrations/:provider/:service/error"
+      },
+      "groups": [
+        {
+          "name": "en",
+          "template_vars": {
+            "locale": "en"
+          },
+          "routes": {
+            "about": "/about-us",
+            "contact": "/contact",
+            "products": "/products/:category",
+            "product-detail": "/products/:category/:productId",
+            "privacy": "/privacy-policy",
+            "terms": "/terms-of-service"
+          },
+          "groups": [
+            {
+              "name": "help",
+              "routes": {
+                "faq": "/help/faq",
+                "support": "/help/support/:ticketId?",
+                "guides": "/help/guides/:guideId"
+              }
+            }
+          ]
+        },
+        {
+          "name": "es",
+          "template_vars": {
+            "locale": "es"
+          },
+          "routes": {
+            "about": "/acerca-de",
+            "contact": "/contacto",
+            "products": "/productos/:category",
+            "product-detail": "/productos/:category/:productId",
+            "privacy": "/politica-de-privacidad",
+            "terms": "/terminos-de-servicio"
+          },
+          "groups": [
+            {
+              "name": "help",
+              "routes": {
+                "faq": "/ayuda/preguntas-frecuentes",
+                "support": "/ayuda/soporte/:ticketId?",
+                "guides": "/ayuda/guias/:guideId"
+              }
+            }
+          ]
+        },
+        {
+          "name": "fr",
+          "template_vars": {
+            "locale": "fr"
+          },
+          "routes": {
+            "about": "/a-propos",
+            "contact": "/contact",
+            "products": "/produits/:category",
+            "product-detail": "/produits/:category/:productId",
+            "privacy": "/politique-de-confidentialite",
+            "terms": "/conditions-de-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "api",
+      "base_url": "https://api.example.com",
+      "url_template": "{protocol}://{api_host}/{version}{route_path}",
+      "template_vars": {
+        "protocol": "https",
+        "api_host": "api.example.com"
+      },
+      "routes": {
+        "status": "/status",
+        "health": "/health"
+      },
+      "groups": [
+        {
+          "name": "v1",
+          "template_vars": {
+            "version": "v1"
+          },
+          "routes": {
+            "users": "/users/:id",
+            "posts": "/posts",
+            "comments": "/comments/:postId",
+            "upload": "/upload/:fileType"
+          },
+          "groups": [
+            {
+              "name": "admin",
+              "routes": {
+                "dashboard": "/admin/dashboard",
+                "settings": "/admin/settings/:section",
+                "users-management": "/admin/users/:userId/manage",
+                "reports": "/admin/reports/:reportType/:date?"
+              }
+            }
+          ]
+        },
+        {
+          "name": "v2",
+          "template_vars": {
+            "version": "v2"
+          },
+          "routes": {
+            "users": "/users/:id",
+            "profiles": "/users/:id/profile",
+            "organizations": "/orgs/:orgId",
+            "teams": "/orgs/:orgId/teams/:teamId?"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cdn",
+      "base_url": "https://cdn.example.com",
+      "url_template": "{protocol}://{cdn_region}.{domain}{route_path}",
+      "template_vars": {
+        "protocol": "https",
+        "cdn_region": "us-west-2",
+        "domain": "cdn.example.com"
+      },
+      "routes": {
+        "assets": "/assets/:version/:file",
+        "images": "/images/:size/:filename",
+        "js": "/js/:bundle.js",
+        "css": "/css/:bundle.css"
+      },
+      "groups": [
+        {
+          "name": "eu",
+          "template_vars": {
+            "cdn_region": "eu-west-1"
+          },
+          "routes": {
+            "assets": "/assets/:version/:file",
+            "images": "/images/:size/:filename"
+          }
+        },
+        {
+          "name": "asia",
+          "template_vars": {
+            "cdn_region": "ap-southeast-1"
+          },
+          "routes": {
+            "assets": "/assets/:version/:file",
+            "images": "/images/:size/:filename"
+          }
+        }
+      ]
+    }
+  ]
+}
