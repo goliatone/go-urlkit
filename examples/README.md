@@ -192,14 +192,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 manager := urlkit.NewRouteManager()
 
 // Create template-enabled group
-app, _ := manager.RegisterGroup("app", "https://app.com", map[string]string{
+manager.RegisterGroup("app", "https://app.com", map[string]string{
     "dashboard": "/dashboard",
 })
+app := manager.Group("app")
 app.SetURLTemplate("https://{tenant}.{domain}{route_path}")
 app.SetTemplateVar("domain", "myapp.com")
 
 // Create tenant-specific child groups
-acme, _ := app.RegisterNestedGroup("acme", "", map[string]string{
+acme := app.RegisterGroup("acme", "", map[string]string{
     "dashboard": "/dashboard",
 })
 acme.SetTemplateVar("tenant", "acme")

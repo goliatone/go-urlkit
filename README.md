@@ -297,17 +297,18 @@ The library supports template based URL generation that provides flexible, maint
 rm := urlkit.NewRouteManager()
 
 // Create a group with URL template
-app, _ := rm.RegisterGroup("app", "https://app.example.com", map[string]string{
+rm.RegisterGroup("app", "https://app.example.com", map[string]string{
     "dashboard": "/dashboard",
     "profile":   "/profile/:userId",
 })
+app := rm.Group("app")
 
 // Set up template with variables
 app.SetURLTemplate("https://{tenant}.{domain}{route_path}")
 app.SetTemplateVar("domain", "myapp.com")
 
 // Create tenant-specific child groups
-acme, _ := app.RegisterNestedGroup("acme", "", map[string]string{
+acme := app.RegisterGroup("acme", "", map[string]string{
     "dashboard": "/dashboard",
     "settings":  "/settings/:section",
 })
