@@ -153,6 +153,17 @@ func (m *RouteManager) RoutePath(groupPath, route string) (string, error) {
 	return joinURLPath(group.getFullPath(), routeTemplate), nil
 }
 
+// RouteTemplate returns the raw route template for the group.
+// It does not include the group path prefix, base URL, or query parameters.
+func (m *RouteManager) RouteTemplate(groupPath, route string) (string, error) {
+	group, err := m.GetGroup(groupPath)
+	if err != nil {
+		return "", err
+	}
+
+	return group.Route(route)
+}
+
 func (m *RouteManager) ResolveWith(groupPath, route string, params any, query any) (string, error) {
 	normalizedParams, err := buildParamsFromInput(params)
 	if err != nil {
