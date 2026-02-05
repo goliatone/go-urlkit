@@ -2,6 +2,7 @@ package urlkit
 
 import (
 	"fmt"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -655,9 +656,11 @@ func (gc *GroupCache) Get(groupName string) *Group {
 		return group
 	}
 
-	// Fetch from manager and cache result (including nil results)
+	// Fetch from manager and cache result (skip caching nil to allow future registrations)
 	group := safeGroupAccess(gc.manager, groupName)
-	gc.cache[groupName] = group
+	if group != nil {
+		gc.cache[groupName] = group
+	}
 	return group
 }
 
@@ -1162,8 +1165,8 @@ func routePathHelper(manager *RouteManager, config *TemplateHelperConfig) func(.
 			}
 		}
 
-		// Build the URL path only (this would need a method in URLKit to get path without base URL)
-		url, err := builder.Build()
+		// Build the full URL, then extract path + query
+		fullURL, err := builder.Build()
 		if err != nil {
 			context := map[string]any{
 				"route_name": parsedArgs.Route,
@@ -1174,8 +1177,22 @@ func routePathHelper(manager *RouteManager, config *TemplateHelperConfig) func(.
 			return formatError("route_path", "build_error", err.Error(), context, config), nil
 		}
 
-		// For now, return the full URL (this can be enhanced later to strip base URL)
-		return pongo2.AsValue(url), nil
+		parsed, err := url.Parse(fullURL)
+		if err != nil {
+			context := map[string]any{
+				"route_name": parsedArgs.Route,
+				"group_name": parsedArgs.Group,
+				"url":        fullURL,
+			}
+			return formatError("route_path", "parse_error", err.Error(), context, config), nil
+		}
+
+		routePath := parsed.Path
+		if parsed.RawQuery != "" {
+			routePath += "?" + parsed.RawQuery
+		}
+
+		return pongo2.AsValue(routePath), nil
 	}
 }
 
