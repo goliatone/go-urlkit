@@ -944,7 +944,7 @@ func TestRoutePathHelper(t *testing.T) {
 				pongo2.AsValue("frontend"),
 				pongo2.AsValue("home"),
 			},
-			expectedResult: "https://example.com/", // Note: current implementation returns full URL
+			expectedResult: "/",
 			expectError:    false,
 		},
 		{
@@ -954,7 +954,7 @@ func TestRoutePathHelper(t *testing.T) {
 				pongo2.AsValue("user_profile"),
 				pongo2.AsValue(map[string]any{"id": 123}),
 			},
-			expectedResult: "https://example.com/users/123/profile",
+			expectedResult: "/users/123/profile",
 			expectError:    false,
 		},
 		{
@@ -965,7 +965,7 @@ func TestRoutePathHelper(t *testing.T) {
 				pongo2.AsValue(map[string]any{}),
 				pongo2.AsValue(map[string]any{"q": "test"}),
 			},
-			expectedResult: "https://example.com/search?q=test",
+			expectedResult: "/search?q=test",
 			expectError:    false,
 		},
 		{

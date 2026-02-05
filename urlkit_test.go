@@ -64,6 +64,18 @@ func TestJoinURL(t *testing.T) {
 			queries:  []urlkit.Query{{"a": "1"}},
 			expected: "http://example.com/foo?existing=1&a=1",
 		},
+		{
+			base:     "http://example.com/v1",
+			path:     "/users",
+			queries:  nil,
+			expected: "http://example.com/v1/users",
+		},
+		{
+			base:     "http://example.com/v1/",
+			path:     "users",
+			queries:  nil,
+			expected: "http://example.com/v1/users",
+		},
 	}
 
 	for _, tt := range tests {
