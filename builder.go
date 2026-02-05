@@ -137,6 +137,22 @@ func (m *RouteManager) Resolve(groupPath, route string, params Params, query Que
 	return group.Render(route, normalizedParams, queries...)
 }
 
+// RoutePath returns the full group path plus the raw route template.
+// It excludes the base URL and does not append query parameters.
+func (m *RouteManager) RoutePath(groupPath, route string) (string, error) {
+	group, err := m.GetGroup(groupPath)
+	if err != nil {
+		return "", err
+	}
+
+	routeTemplate, err := group.Route(route)
+	if err != nil {
+		return "", err
+	}
+
+	return joinURLPath(group.getFullPath(), routeTemplate), nil
+}
+
 func (m *RouteManager) ResolveWith(groupPath, route string, params any, query any) (string, error) {
 	normalizedParams, err := buildParamsFromInput(params)
 	if err != nil {
