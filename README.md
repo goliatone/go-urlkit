@@ -191,6 +191,20 @@ url, err = rm.ResolveWith(
 // Result: https://app.example.com/profile/123?tab=posts&tab=mentions
 ```
 
+### Route Manager Router Registration Helpers
+
+`RoutePath` and `RouteTemplate` return deterministic route templates without
+base URLs or query strings. These are intended for router registration and
+inspection while `Resolve/ResolveWith` handle URL generation.
+
+```go
+path, err := rm.RoutePath("admin.api", "preview")
+// Result: /admin/api/preview/:token
+
+template, err := rm.RouteTemplate("admin.api", "preview")
+// Result: /preview/:token
+```
+
 ### Route Manager with Multiple Groups
 
 ```go
