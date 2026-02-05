@@ -362,6 +362,73 @@ func TestRouteManagerResolveWith(t *testing.T) {
 	}
 }
 
+func TestRouteManagerRoutePathAndTemplate(t *testing.T) {
+	config := &urlkit.Config{
+		Groups: []urlkit.GroupConfig{
+			{
+				Name:    "admin",
+				BaseURL: "https://example.com",
+				Path:    "/admin",
+				Groups: []urlkit.GroupConfig{
+					{
+						Name: "api",
+						Path: "/api",
+						Routes: map[string]string{
+							"preview": "/preview/:token",
+						},
+						Groups: []urlkit.GroupConfig{
+							{
+								Name: "v1",
+								Path: "/v1",
+								Routes: map[string]string{
+									"status": "/status",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	manager, err := urlkit.NewRouteManagerFromConfig(config)
+	if err != nil {
+		t.Fatalf("NewRouteManagerFromConfig returned error: %v", err)
+	}
+
+	path, err := manager.RoutePath("admin.api", "preview")
+	if err != nil {
+		t.Fatalf("RoutePath returned error: %v", err)
+	}
+	if expected := "/admin/api/preview/:token"; path != expected {
+		t.Errorf("expected route path %q, got %q", expected, path)
+	}
+
+	nestedPath, err := manager.RoutePath("admin.api.v1", "status")
+	if err != nil {
+		t.Fatalf("RoutePath for nested group returned error: %v", err)
+	}
+	if expected := "/admin/api/v1/status"; nestedPath != expected {
+		t.Errorf("expected nested route path %q, got %q", expected, nestedPath)
+	}
+
+	template, err := manager.RouteTemplate("admin.api", "preview")
+	if err != nil {
+		t.Fatalf("RouteTemplate returned error: %v", err)
+	}
+	if expected := "/preview/:token"; template != expected {
+		t.Errorf("expected route template %q, got %q", expected, template)
+	}
+
+	if _, err := manager.RoutePath("admin.api", "missing"); !errors.Is(err, urlkit.ErrRouteNotFound) {
+		t.Fatalf("expected ErrRouteNotFound from RoutePath, got %v", err)
+	}
+
+	if _, err := manager.RouteTemplate("admin.api", "missing"); !errors.Is(err, urlkit.ErrRouteNotFound) {
+		t.Fatalf("expected ErrRouteNotFound from RouteTemplate, got %v", err)
+	}
+}
+
 func TestGroupValidateSuccess(t *testing.T) {
 	routes := map[string]string{
 		"user": "/user/:id",
