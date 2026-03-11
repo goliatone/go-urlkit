@@ -1,45 +1,29 @@
 # Changelog
 
-# Unreleased
+# [0.6.0](https://github.com/goliatone/go-urlkit/compare/v0.5.0...v0.6.0) - (2026-03-11)
 
-## Breaking Changes
+## <!-- 1 -->🐛 Bug Fixes
 
-- `NewRouteManager` now creates empty managers only; config loading moved to `NewRouteManagerFromConfig`.
-- Route mutation defaults to `error` conflict handling instead of silent replacement.
-- `RegisterGroup`, `AddRoutes`, `Group.RegisterGroup`, `Group.AddRoutes`, `SetURLTemplate`, and `SetTemplateVar` now return errors.
-- Dotted root registration such as `RegisterGroup("frontend.en", ...)` is no longer allowed.
-- `Freeze()` now blocks all manager-attached mutations.
+- Freeze concurrency and RouteMutationResult reflect commited state ([e1991a3](https://github.com/goliatone/go-urlkit/commit/e1991a34af55cdf320c8dbe374cf08b3cf087788))  - (goliatone)
 
-## Added
+## <!-- 13 -->📦 Bumps
 
-- Route conflict policies via `WithConflictPolicy(...)`.
-- Typed mutation results and conflict errors for runtime route changes.
-- Deterministic route manifest export with `Manifest()`.
-- Manifest comparison via `DiffRouteManifest(...)`.
+- Bump version: v0.6.0 ([9526550](https://github.com/goliatone/go-urlkit/commit/9526550eaf93ced6e3b8e7db15dd696b3c858720))  - (goliatone)
 
-## Migration Notes
+## <!-- 16 -->➕ Add
 
-- Replace `NewRouteManager(&config)` with `NewRouteManagerFromConfig(&config)`.
-- Capture mutation return values, for example:
+- Handle reoute conflicts, return errors ([e22267a](https://github.com/goliatone/go-urlkit/commit/e22267ae6ad76ba5c8959b899a63793770128b6b))  - (goliatone)
 
-```go
-group, result, err := rm.RegisterGroup("api", "https://api.example.com", routes)
-_ = group
-_ = result
-if err != nil {
-    return err
-}
-```
+## <!-- 3 -->📚 Documentation
 
-- Convert dotted root definitions into nested groups:
+- Update changelog for v0.5.0 ([d001eda](https://github.com/goliatone/go-urlkit/commit/d001eda720d09c3db1bcbb2cb38b4fb223fd0df9))  - (goliatone)
 
-```go
-root, _, err := rm.RegisterGroup("frontend", "https://example.com", nil)
-if err != nil {
-    return err
-}
-_, _, err = root.RegisterGroup("en", "/en", routes)
-```
+## <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Udpate tests ([2df2b1c](https://github.com/goliatone/go-urlkit/commit/2df2b1c37ac0b3ed2609ebe8b55022d13f8b6770))  - (goliatone)
+- Udpate docs ([43f863f](https://github.com/goliatone/go-urlkit/commit/43f863fede31a8222c49b6bde057263423026ba0))  - (goliatone)
+- Udpate example ([2305b7f](https://github.com/goliatone/go-urlkit/commit/2305b7f51083be4faf3faf203a4231bf2626b0bb))  - (goliatone)
+- Update tests ([ee2e699](https://github.com/goliatone/go-urlkit/commit/ee2e699d85c208a7e7969fe665e859481d929821))  - (goliatone)
 
 # [0.5.0](https://github.com/goliatone/go-urlkit/compare/v0.4.0...v0.5.0) - (2026-02-05)
 
@@ -176,4 +160,5 @@ _, _, err = root.RegisterGroup("en", "/en", routes)
 - Update readme ([cbcb095](https://github.com/goliatone/go-urlkit/commit/cbcb09527a6d0ee41f126b02b31c2c4829764468))  - (goliatone)
 - Update deps ([eed0eca](https://github.com/goliatone/go-urlkit/commit/eed0eca79bfa71e9d6798ebcd1727e51c4c8194f))  - (goliatone)
 - Update test ([48eefb9](https://github.com/goliatone/go-urlkit/commit/48eefb94cebdff57e4709b8db068dff472cdb708))  - (goliatone)
+
 
