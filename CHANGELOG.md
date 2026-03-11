@@ -1,5 +1,46 @@
 # Changelog
 
+# Unreleased
+
+## Breaking Changes
+
+- `NewRouteManager` now creates empty managers only; config loading moved to `NewRouteManagerFromConfig`.
+- Route mutation defaults to `error` conflict handling instead of silent replacement.
+- `RegisterGroup`, `AddRoutes`, `Group.RegisterGroup`, `Group.AddRoutes`, `SetURLTemplate`, and `SetTemplateVar` now return errors.
+- Dotted root registration such as `RegisterGroup("frontend.en", ...)` is no longer allowed.
+- `Freeze()` now blocks all manager-attached mutations.
+
+## Added
+
+- Route conflict policies via `WithConflictPolicy(...)`.
+- Typed mutation results and conflict errors for runtime route changes.
+- Deterministic route manifest export with `Manifest()`.
+- Manifest comparison via `DiffRouteManifest(...)`.
+
+## Migration Notes
+
+- Replace `NewRouteManager(&config)` with `NewRouteManagerFromConfig(&config)`.
+- Capture mutation return values, for example:
+
+```go
+group, result, err := rm.RegisterGroup("api", "https://api.example.com", routes)
+_ = group
+_ = result
+if err != nil {
+    return err
+}
+```
+
+- Convert dotted root definitions into nested groups:
+
+```go
+root, _, err := rm.RegisterGroup("frontend", "https://example.com", nil)
+if err != nil {
+    return err
+}
+_, _, err = root.RegisterGroup("en", "/en", routes)
+```
+
 # [0.5.0](https://github.com/goliatone/go-urlkit/compare/v0.4.0...v0.5.0) - (2026-02-05)
 
 ## <!-- 1 -->🐛 Bug Fixes
@@ -135,5 +176,4 @@
 - Update readme ([cbcb095](https://github.com/goliatone/go-urlkit/commit/cbcb09527a6d0ee41f126b02b31c2c4829764468))  - (goliatone)
 - Update deps ([eed0eca](https://github.com/goliatone/go-urlkit/commit/eed0eca79bfa71e9d6798ebcd1727e51c4c8194f))  - (goliatone)
 - Update test ([48eefb9](https://github.com/goliatone/go-urlkit/commit/48eefb94cebdff57e4709b8db068dff472cdb708))  - (goliatone)
-
 

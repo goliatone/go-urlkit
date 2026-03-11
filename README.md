@@ -2,6 +2,16 @@
 
 A Go library for URL routing and management with `Express.js` style route templates. Provides a type-safe way to build URLs with parameters and query strings, organized into logical groups.
 
+## Breaking API
+
+`go-urlkit` now defaults to safe runtime mutation:
+
+- conflicting route redefinitions fail with typed errors by default
+- mutating APIs return errors instead of silently replacing routes
+- `NewRouteManager` only creates empty managers
+- `NewRouteManagerFromConfig` is the only config-loading constructor
+- dotted root group registration is rejected; use nested groups or `EnsureGroup`
+
 ## Installation
 
 ```bash
@@ -34,13 +44,13 @@ func main() {
     rm := urlkit.NewRouteManager()
 
     // Register route groups
-    rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+    api, _, err := rm.RegisterGroup("api", "https://api.example.com", map[string]string{
         "user":     "/users/:id",
         "profile":  "/users/:id/profile",
     })
-
-    // Get a group and build URLs
-    api := rm.Group("api")
+    if err != nil {
+        panic(err)
+    }
 
     url, _ := api.Render("user", urlkit.Params{"id": "123"})
     fmt.Println(url) // https://api.example.com/users/123
@@ -62,7 +72,53 @@ Central manager for organizing route groups.
 
 ```go
 rm := urlkit.NewRouteManager()
-rm.RegisterGroup("group-name", "base-url", routes)
+group, result, err := rm.RegisterGroup("group-name", "base-url", routes)
+_ = group
+_ = result
+_ = err
+```
+
+### Runtime Mutation Safety
+
+```go
+rm := urlkit.NewRouteManager()
+
+_, _, err := rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+    "status": "/status",
+})
+if err != nil {
+    panic(err)
+}
+
+_, result, err := rm.AddRoutes("api", map[string]string{
+    "status": "/health",
+    "users":  "/users/:id",
+})
+if err != nil {
+    // err is RouteConflictErrors by default
+    fmt.Println(err)
+}
+fmt.Printf("added=%v conflicts=%v\n", result.Added, result.Conflicts)
+```
+
+Use explicit policies when you want different behavior:
+
+```go
+rm := urlkit.NewRouteManager(
+    urlkit.WithConflictPolicy(urlkit.RouteConflictPolicyReplace),
+)
+```
+
+### Freeze And Manifest
+
+```go
+rm.Freeze()
+
+manifest := rm.Manifest()
+diff := urlkit.DiffRouteManifest(previousManifest, manifest)
+
+fmt.Println(rm.Frozen())   // true
+fmt.Println(len(diff.Added))
 ```
 
 ### Group
@@ -330,7 +386,10 @@ config, err := loadConfigFromFile("i18n_config.json") // You'll need to implemen
 if err != nil {
     log.Fatal(err)
 }
-rm := urlkit.NewRouteManager(&config)
+rm, err := urlkit.NewRouteManagerFromConfig(&config)
+if err != nil {
+    log.Fatal(err)
+}
 
 // English URLs
 enGroup := rm.Group("frontend.en")
