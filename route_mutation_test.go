@@ -33,8 +33,8 @@ func TestRouteMutationDefaultPolicyIsErrorAndCollectsConflicts(t *testing.T) {
 	if len(conflicts.Conflicts) != 2 {
 		t.Fatalf("expected 2 conflicts, got %d", len(conflicts.Conflicts))
 	}
-	if len(result.Added) != 1 || result.Added[0] != "reports" {
-		t.Fatalf("expected added route reports, got %+v", result.Added)
+	if len(result.Added) != 0 {
+		t.Fatalf("expected no committed additions on conflict error, got %+v", result.Added)
 	}
 	if len(result.Conflicts) != 2 {
 		t.Fatalf("expected conflict details in result, got %+v", result.Conflicts)
@@ -187,5 +187,29 @@ func TestRouteManagerRejectsDottedRootRegistration(t *testing.T) {
 		"home": "/",
 	}); err == nil {
 		t.Fatal("expected dotted root registration to fail")
+	}
+}
+
+func TestRouteManagerRejectsConflictingRootBaseURL(t *testing.T) {
+	rm := urlkit.NewRouteManager(urlkit.WithConflictPolicy(urlkit.RouteConflictPolicyReplace))
+	if _, _, err := rm.RegisterGroup("api", "https://api.example.com", map[string]string{
+		"status": "/status",
+	}); err != nil {
+		t.Fatalf("initial RegisterGroup failed: %v", err)
+	}
+
+	_, _, err := rm.RegisterGroup("api", "https://admin.example.com", map[string]string{
+		"health": "/health",
+	})
+	if err == nil {
+		t.Fatal("expected root base_url conflict")
+	}
+
+	var conflict urlkit.RootGroupConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("expected RootGroupConflictError, got %T", err)
+	}
+	if conflict.ExistingBaseURL != "https://api.example.com" || conflict.IncomingBaseURL != "https://admin.example.com" {
+		t.Fatalf("unexpected base_url conflict payload: %+v", conflict)
 	}
 }
