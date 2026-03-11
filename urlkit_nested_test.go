@@ -23,7 +23,7 @@ func TestNestedGroupHierarchicalPathConstruction(t *testing.T) {
 		"contact": "/contacto",
 	})
 
-	en := frontend.RegisterGroup("en", "/en", map[string]string{
+	en := mustRegisterGroup(t, frontend, "en", "/en", map[string]string{
 		"about":   "/about-us",
 		"contact": "/contact",
 	})
@@ -104,7 +104,7 @@ func TestGroupRegisterNestedGroup(t *testing.T) {
 
 	// Get the root group and register nested groups
 	apiGroup := rm.Group("api")
-	v1Group := apiGroup.RegisterGroup("v1", "/v1", map[string]string{
+	v1Group := mustRegisterGroup(t, apiGroup, "v1", "/v1", map[string]string{
 		"users": "/users/:id",
 		"posts": "/posts",
 	})
@@ -125,7 +125,7 @@ func TestGroupRegisterNestedGroup(t *testing.T) {
 	}
 
 	// Test registering multiple levels
-	v2Group := apiGroup.RegisterGroup("v2", "/v2", map[string]string{
+	v2Group := mustRegisterGroup(t, apiGroup, "v2", "/v2", map[string]string{
 		"users":    "/users/:id",
 		"profiles": "/users/:id/profile",
 	})
@@ -136,7 +136,7 @@ func TestGroupRegisterNestedGroup(t *testing.T) {
 	}
 
 	// Test merging routes into existing group
-	existingGroup := apiGroup.RegisterGroup("v1", "/v1", map[string]string{
+	existingGroup := mustRegisterGroup(t, apiGroup, "v1", "/v1", map[string]string{
 		"comments": "/comments/:id",
 	})
 
@@ -213,7 +213,7 @@ func TestNestedGroupURLBuilding(t *testing.T) {
 	store := rm.Group("store")
 
 	// Country-specific sections
-	us := store.RegisterGroup("us", "/us", map[string]string{
+	us := mustRegisterGroup(t, store, "us", "/us", map[string]string{
 		"products": "/products/:category",
 		"cart":     "/cart",
 	})

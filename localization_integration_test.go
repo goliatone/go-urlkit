@@ -1,6 +1,7 @@
 package urlkit
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/flosch/pongo2/v6"
@@ -172,7 +173,6 @@ func TestLocaleDetectionScenarios(t *testing.T) {
 func TestHierarchicalLocaleGroups(t *testing.T) {
 	// Set up URLKit with hierarchical locale structure
 	manager := NewRouteManager()
-
 	// Register base groups
 	manager.RegisterGroup("frontend", "https://example.com", map[string]string{
 		"home":    "/",
@@ -180,23 +180,23 @@ func TestHierarchicalLocaleGroups(t *testing.T) {
 		"contact": "/contact",
 	})
 
-	// Register hierarchical locale groups: frontend.en, frontend.es, frontend.fr
-	manager.RegisterGroup("frontend.en", "https://example.com", map[string]string{
-		"home":    "/en/",
-		"about":   "/en/about-us",
-		"contact": "/en/contact-us",
+	frontend := manager.Group("frontend")
+	mustRegisterGroup(t, frontend, "en", "/en", map[string]string{
+		"home":    "/",
+		"about":   "/about-us",
+		"contact": "/contact-us",
 	})
 
-	manager.RegisterGroup("frontend.es", "https://example.com", map[string]string{
-		"home":    "/es/",
-		"about":   "/es/acerca-de",
-		"contact": "/es/contacto",
+	mustRegisterGroup(t, frontend, "es", "/es", map[string]string{
+		"home":    "/",
+		"about":   "/acerca-de",
+		"contact": "/contacto",
 	})
 
-	manager.RegisterGroup("frontend.fr", "https://example.com", map[string]string{
-		"home":    "/fr/",
-		"about":   "/fr/a-propos",
-		"contact": "/fr/contact",
+	mustRegisterGroup(t, frontend, "fr", "/fr", map[string]string{
+		"home":    "/",
+		"about":   "/a-propos",
+		"contact": "/contact",
 	})
 
 	// Set up locale configuration for hierarchical structure
@@ -297,14 +297,15 @@ func TestLanguageSwitcherImplementation(t *testing.T) {
 
 	// Register hierarchical locale groups for language switcher
 	locales := []string{"en", "es", "fr", "de"}
+	manager.RegisterGroup("frontend", "https://example.com", map[string]string{})
+	frontend := manager.Group("frontend")
 	for _, locale := range locales {
-		groupName := "frontend." + locale
 		routes := map[string]string{
-			"home":     "/" + locale + "/",
-			"products": "/" + locale + "/products/:category?",
-			"about":    "/" + locale + "/about",
+			"home":     "/",
+			"products": "/products/:category?",
+			"about":    "/about",
 		}
-		manager.RegisterGroup(groupName, "https://example.com", routes)
+		mustRegisterGroup(t, frontend, locale, "/"+locale, routes)
 	}
 
 	// Set up locale configuration
@@ -447,9 +448,18 @@ func TestSEOHrefLangGeneration(t *testing.T) {
 		},
 	}
 
+	manager.RegisterGroup("frontend", "https://example.com", seoLocales["en"])
+	root := manager.Group("frontend")
+
 	for locale, routes := range seoLocales {
-		groupName := "frontend." + locale
-		manager.RegisterGroup(groupName, "https://example.com", routes)
+		if locale == "en" {
+			continue
+		}
+		mustRegisterGroup(t, root, locale, "/"+locale, map[string]string{
+			"home":     "/",
+			"products": strings.TrimPrefix(routes["products"], "/"+locale),
+			"blog":     strings.TrimPrefix(routes["blog"], "/"+locale),
+		})
 	}
 
 	// Set up locale configuration for SEO
@@ -612,39 +622,43 @@ func TestLocalizationIntegrationWithTemplateVariables(t *testing.T) {
 	config := &Config{
 		Groups: []GroupConfig{
 			{
-				Name:        "frontend.en",
-				BaseURL:     "https://example.com",
-				URLTemplate: "{protocol}://{host}/{locale_prefix}{route_path}",
-				TemplateVars: map[string]string{
-					"protocol":      "https",
-					"host":          "example.com",
-					"locale_prefix": "",
-				},
-				Routes: map[string]string{
-					"home":    "/",
-					"about":   "/about-us",
-					"contact": "/contact-us",
-				},
-			},
-			{
-				Name:        "frontend.es",
-				BaseURL:     "https://example.com",
-				URLTemplate: "{protocol}://{host}/{locale_prefix}{route_path}",
-				TemplateVars: map[string]string{
-					"protocol":      "https",
-					"host":          "example.com",
-					"locale_prefix": "es/",
-				},
-				Routes: map[string]string{
-					"home":    "/",
-					"about":   "/acerca-de",
-					"contact": "/contacto",
+				Name:    "frontend",
+				BaseURL: "https://example.com",
+				Groups: []GroupConfig{
+					{
+						Name:        "en",
+						URLTemplate: "{protocol}://{host}/{locale_prefix}{route_path}",
+						TemplateVars: map[string]string{
+							"protocol":      "https",
+							"host":          "example.com",
+							"locale_prefix": "",
+						},
+						Routes: map[string]string{
+							"home":    "/",
+							"about":   "/about-us",
+							"contact": "/contact-us",
+						},
+					},
+					{
+						Name:        "es",
+						URLTemplate: "{protocol}://{host}/{locale_prefix}{route_path}",
+						TemplateVars: map[string]string{
+							"protocol":      "https",
+							"host":          "example.com",
+							"locale_prefix": "es/",
+						},
+						Routes: map[string]string{
+							"home":    "/",
+							"about":   "/acerca-de",
+							"contact": "/contacto",
+						},
+					},
 				},
 			},
 		},
 	}
 
-	manager = NewRouteManager(config)
+	manager = mustManagerFromConfig(t, config)
 
 	// Set up localization config
 	localeConfig := &LocaleConfig{

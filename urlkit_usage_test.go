@@ -84,7 +84,7 @@ func TestI18nURLStructureFromSpecification(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Test English company about page
 	enAboutURL, err := manager.Group("frontend").Group("en").Group("company").Builder("about").Build()
@@ -162,21 +162,21 @@ func TestURLSegmentReorderingThroughTemplateChanges(t *testing.T) {
 	frontend.SetTemplateVar("host", "www.example.com")
 
 	// Create English group
-	en := frontend.RegisterGroup("en", "", map[string]string{})
+	en := mustRegisterGroup(t, frontend, "en", "", map[string]string{})
 	en.SetTemplateVar("locale", "en-US")
 
 	// Create company section
-	company := en.RegisterGroup("company", "", map[string]string{
+	company := mustRegisterGroup(t, en, "company", "", map[string]string{
 		"about": "/about",
 	})
 	company.SetTemplateVar("section", "about-us")
 
 	// Create Spanish group
-	es := frontend.RegisterGroup("es", "", map[string]string{})
+	es := mustRegisterGroup(t, frontend, "es", "", map[string]string{})
 	es.SetTemplateVar("locale", "es-ES")
 
 	// Create Spanish company section
-	companyEs := es.RegisterGroup("company", "", map[string]string{
+	companyEs := mustRegisterGroup(t, es, "company", "", map[string]string{
 		"about": "/acerca-de",
 	})
 	companyEs.SetTemplateVar("section", "nuestra-empresa")
@@ -288,7 +288,7 @@ func TestProtocolHostPathVariableCombinations(t *testing.T) {
 	}
 
 	// Test 2: Environment override in child group
-	staging := api.RegisterGroup("staging", "", map[string]string{
+	staging := mustRegisterGroup(t, api, "staging", "", map[string]string{
 		"debug": "/debug",
 		"logs":  "/logs/:service",
 	})
@@ -305,7 +305,7 @@ func TestProtocolHostPathVariableCombinations(t *testing.T) {
 	}
 
 	// Test 3: Protocol switching
-	insecure := api.RegisterGroup("insecure", "", map[string]string{
+	insecure := mustRegisterGroup(t, api, "insecure", "", map[string]string{
 		"health": "/health",
 	})
 	insecure.SetTemplateVar("protocol", "http")

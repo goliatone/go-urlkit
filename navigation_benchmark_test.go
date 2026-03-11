@@ -58,12 +58,12 @@ func BenchmarkNavigationRendering(b *testing.B) {
 	targets := make([]navTarget, 0, len(locales)*len(sections))
 
 	for _, locale := range locales {
-		localeGroup := frontend.RegisterGroup(locale, "/"+locale, map[string]string{})
+		localeGroup := mustRegisterGroup(b, frontend, locale, "/"+locale, map[string]string{})
 		localeGroup.SetTemplateVar("locale", locale)
 
 		for _, section := range sections {
 			sectionName := section.name
-			sectionGroup := localeGroup.RegisterGroup(sectionName, section.path, section.routes)
+			sectionGroup := mustRegisterGroup(b, localeGroup, sectionName, section.path, section.routes)
 
 			routeNames := slices.Sorted(maps.Keys(section.routes))
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestEnsureGroupCreatesHierarchyAndDefaults(t *testing.T) {
-	rm := urlkit.NewRouteManager()
+	rm := urlkit.NewRouteManager(urlkit.WithConflictPolicy(urlkit.RouteConflictPolicyReplace))
 	rm.RegisterGroup("frontend", "https://example.com", map[string]string{
 		"home": "/",
 	})
@@ -30,7 +30,7 @@ func TestEnsureGroupCreatesHierarchyAndDefaults(t *testing.T) {
 		t.Fatal("Group lookup should return ensured group instance")
 	}
 
-	if _, err := rm.AddRoutes("frontend.en.blog", map[string]string{
+	if _, _, err := rm.AddRoutes("frontend.en.blog", map[string]string{
 		"article": "/:slug",
 	}); err != nil {
 		t.Fatalf("AddRoutes failed: %v", err)
@@ -60,7 +60,7 @@ func TestEnsureGroupSupportsCustomPaths(t *testing.T) {
 		t.Fatalf("EnsureGroup with custom path failed: %v", err)
 	}
 
-	if _, err := rm.AddRoutes("frontend.marketing.landing", map[string]string{
+	if _, _, err := rm.AddRoutes("frontend.marketing.landing", map[string]string{
 		"promo": "/:slug",
 	}); err != nil {
 		t.Fatalf("AddRoutes failed: %v", err)
@@ -81,12 +81,12 @@ func TestEnsureGroupSupportsCustomPaths(t *testing.T) {
 }
 
 func TestRouteManagerAddRoutesRedefinesTemplates(t *testing.T) {
-	rm := urlkit.NewRouteManager()
+	rm := urlkit.NewRouteManager(urlkit.WithConflictPolicy(urlkit.RouteConflictPolicyReplace))
 	rm.RegisterGroup("api", "https://api.example.com", map[string]string{
 		"status": "/status",
 	})
 
-	if _, err := rm.AddRoutes("api", map[string]string{
+	if _, _, err := rm.AddRoutes("api", map[string]string{
 		"users": "/users/:id",
 	}); err != nil {
 		t.Fatalf("initial AddRoutes failed: %v", err)
@@ -104,7 +104,7 @@ func TestRouteManagerAddRoutesRedefinesTemplates(t *testing.T) {
 	}
 
 	// Redefine the users route with a new template
-	if _, err := rm.AddRoutes("api", map[string]string{
+	if _, _, err := rm.AddRoutes("api", map[string]string{
 		"users": "/v2/users/:id",
 	}); err != nil {
 		t.Fatalf("redefinition AddRoutes failed: %v", err)
@@ -138,7 +138,7 @@ func TestAddRoutesRespectsTemplateOwner(t *testing.T) {
 	}
 	en.SetTemplateVar("locale", "/es")
 
-	if _, err := rm.AddRoutes("frontend.en", map[string]string{
+	if _, _, err := rm.AddRoutes("frontend.en", map[string]string{
 		"about": "/about",
 	}); err != nil {
 		t.Fatalf("AddRoutes failed: %v", err)

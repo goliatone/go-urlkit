@@ -595,7 +595,7 @@ func TestNewRouteManagerWithConfig(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Test that groups were registered correctly
 	frontend := manager.Group("frontend")
@@ -669,7 +669,7 @@ func TestConfigValidation(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Test successful validation
 	expectedRoutes := map[string][]string{
@@ -693,7 +693,7 @@ func TestEmptyConfig(t *testing.T) {
 		Groups: []urlkit.GroupConfig{},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Should not panic but have no groups
 	defer func() {
@@ -715,7 +715,7 @@ func TestConfigWithEmptyRoutes(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 	group := manager.Group("empty")
 
 	// Should be able to access group but no routes
@@ -740,7 +740,7 @@ func TestConfigIntegrationWithExistingAPI(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Add additional group manually after config
 	manager.RegisterGroup("manual", "http://manual.com", map[string]string{
@@ -781,7 +781,7 @@ func TestNestedGroupValidationWithDotSeparatedRoutes(t *testing.T) {
 
 	// Get the frontend group and register nested groups
 	frontend := rm.Group("frontend")
-	en := frontend.RegisterGroup("en", "/en", map[string]string{
+	en := mustRegisterGroup(t, frontend, "en", "/en", map[string]string{
 		"about":   "/about-us",
 		"contact": "/contact",
 	})
@@ -1029,7 +1029,7 @@ func TestNestedConfigurationParsing(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Test root group access
 	apiGroup := manager.Group("api")
@@ -1208,7 +1208,7 @@ func TestConfigurationBackwardCompatibility(t *testing.T) {
 func TestConfigurationErrorCases(t *testing.T) {
 	// Test error cases (missing groups, invalid configurations)
 
-	// Test 1: Nested group with base URL (should panic)
+	// Test 1: Nested group with base URL should return an error
 	invalidConfig := urlkit.Config{
 		Groups: []urlkit.GroupConfig{
 			{
@@ -1225,26 +1225,6 @@ func TestConfigurationErrorCases(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	// Should panic when parsing nested group with base URL
-	didPanic := false
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				didPanic = true
-				// Verify the panic message mentions the issue
-				errorMsg := fmt.Sprintf("%v", r)
-				if !strings.Contains(errorMsg, "configuration error") || !strings.Contains(errorMsg, "base_url") {
-					t.Errorf("Expected panic message about configuration base_url restriction, got: %v", r)
-				}
-			}
-		}()
-		urlkit.NewRouteManager(&invalidConfig)
-	}()
-
-	if !didPanic {
-		t.Error("Expected panic when nested group specifies base_url")
 	}
 
 	if _, err := urlkit.NewRouteManagerFromConfig(invalidConfig); err == nil {
@@ -1270,8 +1250,8 @@ func TestConfigurationErrorCases(t *testing.T) {
 
 	if _, err := urlkit.NewRouteManagerFromConfig(duplicateRoot); err == nil {
 		t.Error("Expected error when duplicate root group names are provided")
-	} else if !strings.Contains(err.Error(), "duplicate root group") {
-		t.Errorf("Expected duplicate root group error, got: %v", err)
+	} else if !strings.Contains(err.Error(), "route conflict") {
+		t.Errorf("Expected route conflict error, got: %v", err)
 	}
 
 	// Test 2: Empty configuration
@@ -1322,7 +1302,7 @@ func TestConfigurationWithEmptyOrNilRoutes(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Test that groups were created despite empty paths
 	apiGroup := manager.Group("api")
@@ -1377,17 +1357,17 @@ func TestDeeplyNestedGroupsEdgeCases(t *testing.T) {
 	store := rm.Group("store")
 
 	// Regional divisions
-	northAmerica := store.RegisterGroup("north-america", "/na", map[string]string{
+	northAmerica := mustRegisterGroup(t, store, "north-america", "/na", map[string]string{
 		"regions": "/regions",
 	})
 
 	// Country subdivisions
-	usa := northAmerica.RegisterGroup("usa", "/usa", map[string]string{
+	usa := mustRegisterGroup(t, northAmerica, "usa", "/usa", map[string]string{
 		"states": "/states",
 	})
 
 	// State subdivisions
-	california := usa.RegisterGroup("california", "/ca", map[string]string{
+	california := mustRegisterGroup(t, usa, "california", "/ca", map[string]string{
 		"cities": "/cities",
 	})
 
@@ -1463,12 +1443,12 @@ func TestEmptyPathSegmentsEdgeCases(t *testing.T) {
 	api := rm.Group("api")
 
 	// Empty path segment (should not add any path component)
-	emptyPath := api.RegisterGroup("empty", "", map[string]string{
+	emptyPath := mustRegisterGroup(t, api, "empty", "", map[string]string{
 		"test": "/test-route",
 	})
 
 	// Normal path after empty
-	normal := emptyPath.RegisterGroup("normal", "/normal", map[string]string{
+	normal := mustRegisterGroup(t, emptyPath, "normal", "/normal", map[string]string{
 		"data": "/data/:id",
 	})
 
@@ -1501,7 +1481,7 @@ func TestEmptyPathSegmentsEdgeCases(t *testing.T) {
 	}
 
 	// Test mixed empty and slash paths
-	slashPath := api.RegisterGroup("slash", "/", map[string]string{
+	slashPath := mustRegisterGroup(t, api, "slash", "/", map[string]string{
 		"root": "/root",
 	})
 
@@ -1527,7 +1507,7 @@ func TestComplexParameterInterpolation(t *testing.T) {
 	api := rm.Group("api")
 
 	// Complex parameter patterns
-	v1 := api.RegisterGroup("v1", "/v1", map[string]string{
+	v1 := mustRegisterGroup(t, api, "v1", "/v1", map[string]string{
 		"user-profile":    "/users/:userId/profile",
 		"user-posts":      "/users/:userId/posts/:postId",
 		"complex-pattern": "/category/:category/item-:itemId/reviews/:reviewId?",
@@ -1628,7 +1608,7 @@ func TestQueryParameterHandlingEdgeCases(t *testing.T) {
 
 	search := rm.Group("search")
 
-	advanced := search.RegisterGroup("advanced", "/advanced", map[string]string{
+	advanced := mustRegisterGroup(t, search, "advanced", "/advanced", map[string]string{
 		"query":   "/query/:searchId",
 		"results": "/results",
 	})
@@ -1801,11 +1781,14 @@ func ExampleGroup_apiVersioningPattern() {
 	api := rm.Group("api")
 
 	// Add v1 API routes
-	v1 := api.RegisterGroup("v1", "/v1", map[string]string{
+	v1, _, err := api.RegisterGroup("v1", "/v1", map[string]string{
 		"users":    "/users/:id",
 		"posts":    "/posts",
 		"comments": "/posts/:postId/comments",
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	// Add v2 API routes with new endpoints
 	api.RegisterGroup("v2", "/v2", map[string]string{
@@ -1911,7 +1894,11 @@ func ExampleRouteManager_configurationBasedSetup() {
 	}
 
 	// Create route manager from configuration
-	manager := urlkit.NewRouteManager(&config)
+	manager, err := urlkit.NewRouteManagerFromConfig(&config)
+	if err != nil {
+		fmt.Println("failed to load config:", err)
+		return
+	}
 
 	// Build URLs using the configured nested structure
 	// Frontend home: https://myapp.com/
@@ -1974,10 +1961,13 @@ func ExampleRouteManager_validationWithDotSeparatedRoutes() {
 	})
 
 	api := rm.Group("api")
-	v1 := api.RegisterGroup("v1", "/v1", map[string]string{
+	v1, _, err := api.RegisterGroup("v1", "/v1", map[string]string{
 		"users": "/users/:id",
 		"posts": "/posts",
 	})
+	if err != nil {
+		panic(err)
+	}
 	v1.RegisterGroup("admin", "/admin", map[string]string{
 		"dashboard": "/dashboard",
 	})
@@ -1992,7 +1982,7 @@ func ExampleRouteManager_validationWithDotSeparatedRoutes() {
 	}
 
 	// Validate the configuration
-	err := rm.Validate(expectedRoutes)
+	err = rm.Validate(expectedRoutes)
 	if err != nil {
 		fmt.Printf("Validation failed: %v\n", err)
 		return
@@ -2034,14 +2024,14 @@ func TestTemplateVariableCollectionAndInheritance(t *testing.T) {
 	root.SetTemplateVar("version", "v1")
 
 	// Create child group that overrides some variables and adds new ones
-	child := root.RegisterGroup("mobile", "/mobile", map[string]string{
+	child := mustRegisterGroup(t, root, "mobile", "/mobile", map[string]string{
 		"app": "/app/:id",
 	})
 	child.SetTemplateVar("version", "v2")   // Override parent variable
 	child.SetTemplateVar("platform", "ios") // Add new variable
 
 	// Create grandchild to test deeper inheritance
-	grandchild := child.RegisterGroup("premium", "/premium", map[string]string{
+	grandchild := mustRegisterGroup(t, child, "premium", "/premium", map[string]string{
 		"features": "/features",
 	})
 	grandchild.SetTemplateVar("tier", "premium")
@@ -2209,7 +2199,7 @@ func TestRouteManagerDebugTreeIncludesHierarchy(t *testing.T) {
 	frontend.SetURLTemplate("{base_url}/{locale}{route_path}")
 	frontend.SetTemplateVar("locale", "en")
 
-	en := frontend.RegisterGroup("en", "/en", map[string]string{
+	en := mustRegisterGroup(t, frontend, "en", "/en", map[string]string{
 		"contact": "/contact",
 	})
 	en.SetTemplateVar("region", "us")
@@ -2244,10 +2234,10 @@ func TestTemplateOwnerDiscoveryLogic(t *testing.T) {
 	})
 
 	root := rm.Group("root")
-	child := root.RegisterGroup("child", "/child", map[string]string{
+	child := mustRegisterGroup(t, root, "child", "/child", map[string]string{
 		"page": "/page",
 	})
-	grandchild := child.RegisterGroup("grandchild", "/grandchild", map[string]string{
+	grandchild := mustRegisterGroup(t, child, "grandchild", "/grandchild", map[string]string{
 		"item": "/item/:id",
 	})
 
@@ -2416,7 +2406,7 @@ func TestFullURLBuildingWithTemplatesProgrammaticAPI(t *testing.T) {
 	api.SetTemplateVar("version", "1")
 
 	// Create nested groups with variable overrides
-	v2 := api.RegisterGroup("v2", "/v2", map[string]string{
+	v2 := mustRegisterGroup(t, api, "v2", "/v2", map[string]string{
 		"users": "/users/:id",
 		"posts": "/posts",
 	})
@@ -2538,7 +2528,7 @@ func TestJSONConfigurationLoadingWithTemplateFields(t *testing.T) {
 		},
 	}
 
-	manager := urlkit.NewRouteManager(&config)
+	manager := mustManagerFromConfig(t, &config)
 
 	// Test root group template URL building
 	homeURL, err := manager.Group("frontend").Builder("home").Build()
@@ -2649,28 +2639,28 @@ func TestComplexNestedScenariosFromFeatureSpecification(t *testing.T) {
 	site.SetTemplateVar("locale_path", "")
 
 	// US region
-	us := site.RegisterGroup("us", "/us", map[string]string{
+	us := mustRegisterGroup(t, site, "us", "/us", map[string]string{
 		"products": "/products/:category",
 		"cart":     "/cart",
 	})
 	us.SetTemplateVar("region_path", "/us")
 
 	// US English
-	usEn := us.RegisterGroup("en", "/en", map[string]string{
+	usEn := mustRegisterGroup(t, us, "en", "/en", map[string]string{
 		"checkout": "/checkout/:step",
 		"account":  "/account",
 	})
 	usEn.SetTemplateVar("locale_path", "/en")
 
 	// US Spanish
-	usEs := us.RegisterGroup("es", "/es", map[string]string{
+	usEs := mustRegisterGroup(t, us, "es", "/es", map[string]string{
 		"checkout": "/pago/:step",
 		"account":  "/cuenta",
 	})
 	usEs.SetTemplateVar("locale_path", "/es")
 
 	// EU region with different structure
-	eu := site.RegisterGroup("eu", "", map[string]string{
+	eu := mustRegisterGroup(t, site, "eu", "", map[string]string{
 		"products": "/products/:category",
 	})
 	eu.SetURLTemplate("{base_url}{locale_path}.{region_code}{route_path}")
@@ -2678,7 +2668,7 @@ func TestComplexNestedScenariosFromFeatureSpecification(t *testing.T) {
 	eu.SetTemplateVar("locale_path", "/en")
 
 	// EU locales
-	euDe := eu.RegisterGroup("de", "", map[string]string{
+	euDe := mustRegisterGroup(t, eu, "de", "", map[string]string{
 		"checkout": "/kasse/:step",
 		"account":  "/konto",
 	})
@@ -2750,7 +2740,7 @@ func TestVariableOverrideBehavior(t *testing.T) {
 	service.SetTemplateVar("version", "v1")
 
 	// Child overrides some variables
-	staging := service.RegisterGroup("staging", "/staging", map[string]string{
+	staging := mustRegisterGroup(t, service, "staging", "/staging", map[string]string{
 		"health":  "/health",
 		"metrics": "/metrics",
 	})
@@ -2759,7 +2749,7 @@ func TestVariableOverrideBehavior(t *testing.T) {
 	staging.SetTemplateVar("debug", "true")       // New variable
 
 	// Grandchild overrides more variables
-	v2 := staging.RegisterGroup("v2", "/v2", map[string]string{
+	v2 := mustRegisterGroup(t, staging, "v2", "/v2", map[string]string{
 		"users": "/users/:id",
 		"posts": "/posts",
 	})
@@ -2884,12 +2874,12 @@ func TestExistingFunctionalityWorksUnchanged(t *testing.T) {
 
 	// Test nested groups without templates
 	api := rm.Group("api")
-	v1 := api.RegisterGroup("v1", "/v1", map[string]string{
+	v1 := mustRegisterGroup(t, api, "v1", "/v1", map[string]string{
 		"analytics": "/analytics/:metric",
 		"reports":   "/reports",
 	})
 
-	v2 := api.RegisterGroup("v2", "/v2", map[string]string{
+	v2 := mustRegisterGroup(t, api, "v2", "/v2", map[string]string{
 		"analytics":  "/analytics/:metric/:timeframe",
 		"dashboards": "/dashboards/:id",
 	})
@@ -2971,7 +2961,7 @@ func TestEmptyMissingTemplatesFallbackToConcatenation(t *testing.T) {
 	}
 
 	// Create nested group without template
-	api := legacy.RegisterGroup("api", "/api", map[string]string{
+	api := mustRegisterGroup(t, legacy, "api", "/api", map[string]string{
 		"status": "/status",
 		"health": "/health/:check?",
 	})
@@ -3034,7 +3024,7 @@ func TestEmptyMissingTemplatesFallbackToConcatenation(t *testing.T) {
 	}
 
 	// Test mixed scenario: parent has no template, child has template
-	mixed := legacy.RegisterGroup("mixed", "/mixed", map[string]string{
+	mixed := mustRegisterGroup(t, legacy, "mixed", "/mixed", map[string]string{
 		"data": "/data/:id",
 	})
 	mixed.SetURLTemplate("{base_url}/special{route_path}")

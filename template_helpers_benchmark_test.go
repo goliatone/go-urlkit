@@ -423,7 +423,10 @@ func setupBenchmarkManager() *RouteManager {
 		},
 	}
 
-	manager := NewRouteManager(config)
+	manager, err := NewRouteManagerFromConfig(config)
+	if err != nil {
+		panic(err)
+	}
 	return manager
 }
 
