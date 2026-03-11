@@ -1250,8 +1250,8 @@ func TestConfigurationErrorCases(t *testing.T) {
 
 	if _, err := urlkit.NewRouteManagerFromConfig(duplicateRoot); err == nil {
 		t.Error("Expected error when duplicate root group names are provided")
-	} else if !strings.Contains(err.Error(), "route conflict") {
-		t.Errorf("Expected route conflict error, got: %v", err)
+	} else if !strings.Contains(err.Error(), "root group conflict") {
+		t.Errorf("Expected root group conflict error, got: %v", err)
 	}
 
 	// Test 2: Empty configuration
