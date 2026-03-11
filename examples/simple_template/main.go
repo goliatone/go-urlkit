@@ -6,6 +6,13 @@ import (
 	"github.com/goliatone/go-urlkit"
 )
 
+func mustGroup(group *urlkit.Group, _ urlkit.RouteMutationResult, err error) *urlkit.Group {
+	if err != nil {
+		panic(err)
+	}
+	return group
+}
+
 // SimpleTemplateExample demonstrates the core templating concepts in a minimal example.
 // This is perfect for getting started with template-based URL generation.
 func main() {
@@ -47,17 +54,17 @@ func main() {
 	fmt.Println("   Creating environment-specific child groups...")
 
 	// Create development environment
-	dev := blog.RegisterGroup("dev", "", map[string]string{
+	dev := mustGroup(blog.RegisterGroup("dev", "", map[string]string{
 		"home": "/",
 		"post": "/post/:slug",
-	})
+	}))
 	dev.SetTemplateVar("subdomain", "dev-blog") // Override parent's subdomain
 
 	// Create staging environment
-	staging := blog.RegisterGroup("staging", "", map[string]string{
+	staging := mustGroup(blog.RegisterGroup("staging", "", map[string]string{
 		"home": "/",
 		"post": "/post/:slug",
-	})
+	}))
 	staging.SetTemplateVar("subdomain", "staging-blog") // Override parent's subdomain
 
 	// Build URLs for different environments
@@ -85,19 +92,19 @@ func main() {
 	api.SetTemplateVar("domain", "example.com")
 
 	// Create v1 API
-	v1 := api.RegisterGroup("v1", "", map[string]string{
+	v1 := mustGroup(api.RegisterGroup("v1", "", map[string]string{
 		"users":  "/users/:id",
 		"posts":  "/posts",
 		"search": "/search",
-	})
+	}))
 	v1.SetTemplateVar("version", "v1")
 
 	// Create v2 API
-	v2 := api.RegisterGroup("v2", "", map[string]string{
+	v2 := mustGroup(api.RegisterGroup("v2", "", map[string]string{
 		"users":    "/users/:id",
 		"profiles": "/users/:id/profile",
 		"search":   "/search/advanced",
-	})
+	}))
 	v2.SetTemplateVar("version", "v2")
 
 	// Build API URLs

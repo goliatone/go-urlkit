@@ -9,6 +9,13 @@ import (
 	"github.com/goliatone/go-urlkit"
 )
 
+func mustGroup(group *urlkit.Group, _ urlkit.RouteMutationResult, err error) *urlkit.Group {
+	if err != nil {
+		panic(err)
+	}
+	return group
+}
+
 // TemplatedURLExample demonstrates the template-based URL generation features
 // of the urlkit library. This includes:
 //
@@ -139,19 +146,19 @@ func createProgrammaticConfig() *urlkit.RouteManager {
 	frontend.SetTemplateVar("domain", "example.com")
 
 	// Create English localization group
-	en := frontend.RegisterGroup("en", "", map[string]string{
+	en := mustGroup(frontend.RegisterGroup("en", "", map[string]string{
 		"about":    "/about-us",
 		"contact":  "/contact",
 		"products": "/products/:category",
-	})
+	}))
 	en.SetTemplateVar("locale", "en")
 
 	// Create Spanish localization group
-	es := frontend.RegisterGroup("es", "", map[string]string{
+	es := mustGroup(frontend.RegisterGroup("es", "", map[string]string{
 		"about":    "/acerca-de",
 		"contact":  "/contacto",
 		"products": "/productos/:category",
-	})
+	}))
 	es.SetTemplateVar("locale", "es")
 
 	// Create API group with version template
@@ -164,16 +171,16 @@ func createProgrammaticConfig() *urlkit.RouteManager {
 	api.SetTemplateVar("protocol", "https")
 	api.SetTemplateVar("api_host", "api.example.com")
 
-	v1 := api.RegisterGroup("v1", "", map[string]string{
+	v1 := mustGroup(api.RegisterGroup("v1", "", map[string]string{
 		"users": "/users/:id",
 		"posts": "/posts",
-	})
+	}))
 	v1.SetTemplateVar("version", "v1")
 
-	v2 := api.RegisterGroup("v2", "", map[string]string{
+	v2 := mustGroup(api.RegisterGroup("v2", "", map[string]string{
 		"users":         "/users/:id",
 		"organizations": "/orgs/:orgId",
-	})
+	}))
 	v2.SetTemplateVar("version", "v2")
 
 	// Create CDN group with region template
@@ -186,14 +193,14 @@ func createProgrammaticConfig() *urlkit.RouteManager {
 	cdn.SetTemplateVar("cdn_region", "us-west-2")
 	cdn.SetTemplateVar("domain", "cdn.example.com")
 
-	eu := cdn.RegisterGroup("eu", "", map[string]string{
+	eu := mustGroup(cdn.RegisterGroup("eu", "", map[string]string{
 		"assets": "/assets/:version/:file",
-	})
+	}))
 	eu.SetTemplateVar("cdn_region", "eu-west-1")
 
-	asia := cdn.RegisterGroup("asia", "", map[string]string{
+	asia := mustGroup(cdn.RegisterGroup("asia", "", map[string]string{
 		"assets": "/assets/:version/:file",
-	})
+	}))
 	asia.SetTemplateVar("cdn_region", "ap-southeast-1")
 
 	return manager
@@ -322,10 +329,10 @@ func demonstrateProgrammaticUsage() {
 	}
 
 	for _, tenant := range tenants {
-		tenantGroup := app.RegisterGroup(tenant.name, "", map[string]string{
+		tenantGroup := mustGroup(app.RegisterGroup(tenant.name, "", map[string]string{
 			"dashboard": "/dashboard",
 			"settings":  "/settings/:section",
-		})
+		}))
 
 		tenantGroup.SetTemplateVar("tenant", tenant.tenant)
 
@@ -360,20 +367,20 @@ func demonstrateVariableInheritance() {
 	fmt.Println("   • Root template variables: protocol, domain, service")
 
 	// Production environment group
-	prod := root.RegisterGroup("prod", "", map[string]string{
+	prod := mustGroup(root.RegisterGroup("prod", "", map[string]string{
 		"api":    "/api/:version",
 		"health": "/health",
-	})
+	}))
 	prod.SetTemplateVar("environment", "prod")
 	prod.SetTemplateVar("region", "us-east-1")
 
 	fmt.Println("   • Production adds: environment, region")
 
 	// Staging overrides some variables
-	staging := root.RegisterGroup("staging", "", map[string]string{
+	staging := mustGroup(root.RegisterGroup("staging", "", map[string]string{
 		"api":    "/api/:version",
 		"health": "/health",
-	})
+	}))
 	staging.SetTemplateVar("environment", "staging")
 	staging.SetTemplateVar("region", "us-west-2")
 	staging.SetTemplateVar("service", "staging-platform") // Override parent
