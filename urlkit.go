@@ -21,6 +21,153 @@ var (
 	ErrRouteNotFound = errors.New("route not found")
 )
 
+type RouteConflictPolicy string
+
+const (
+	RouteConflictPolicyError   RouteConflictPolicy = "error"
+	RouteConflictPolicyReplace RouteConflictPolicy = "replace"
+	RouteConflictPolicySkip    RouteConflictPolicy = "skip"
+)
+
+type RouteConflictError struct {
+	GroupFQN         string
+	RouteKey         string
+	ExistingTemplate string
+	IncomingTemplate string
+}
+
+func (e RouteConflictError) Error() string {
+	return fmt.Sprintf(
+		"route conflict in group %q for route %q: existing=%q incoming=%q",
+		e.GroupFQN,
+		e.RouteKey,
+		e.ExistingTemplate,
+		e.IncomingTemplate,
+	)
+}
+
+type RouteConflictErrors struct {
+	Conflicts []RouteConflictError
+}
+
+func (e RouteConflictErrors) Error() string {
+	if len(e.Conflicts) == 0 {
+		return "route conflicts"
+	}
+
+	parts := make([]string, 0, len(e.Conflicts))
+	for _, conflict := range e.Conflicts {
+		parts = append(parts, conflict.Error())
+	}
+	return strings.Join(parts, "; ")
+}
+
+type RouteMutationResult struct {
+	Added     []string
+	Replaced  []string
+	Skipped   []string
+	Conflicts []RouteConflictError
+}
+
+type FrozenRouteManagerError struct {
+	Operation string
+	GroupFQN  string
+}
+
+func (e FrozenRouteManagerError) Error() string {
+	if e.GroupFQN == "" {
+		return fmt.Sprintf("route manager is frozen: %s", e.Operation)
+	}
+	return fmt.Sprintf("route manager is frozen: %s on %s", e.Operation, e.GroupFQN)
+}
+
+type RouteManifestEntry struct {
+	GroupFQN         string
+	RouteKey         string
+	RouteTemplate    string
+	FullPathTemplate string
+}
+
+type RouteManifestChange struct {
+	Before RouteManifestEntry
+	After  RouteManifestEntry
+}
+
+type RouteManifestDiff struct {
+	Added   []RouteManifestEntry
+	Removed []RouteManifestEntry
+	Changed []RouteManifestChange
+}
+
+type Option func(*RouteManager)
+
+type runtimeState struct {
+	mu             sync.RWMutex
+	conflictPolicy RouteConflictPolicy
+	frozen         bool
+}
+
+func newRuntimeState() *runtimeState {
+	return &runtimeState{conflictPolicy: RouteConflictPolicyError}
+}
+
+func (r *runtimeState) policy() RouteConflictPolicy {
+	if r == nil {
+		return RouteConflictPolicyError
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	switch r.conflictPolicy {
+	case RouteConflictPolicyReplace, RouteConflictPolicySkip:
+		return r.conflictPolicy
+	default:
+		return RouteConflictPolicyError
+	}
+}
+
+func (r *runtimeState) setPolicy(policy RouteConflictPolicy) {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	switch policy {
+	case RouteConflictPolicyReplace, RouteConflictPolicySkip:
+		r.conflictPolicy = policy
+	default:
+		r.conflictPolicy = RouteConflictPolicyError
+	}
+}
+
+func (r *runtimeState) freeze() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.frozen = true
+	r.mu.Unlock()
+}
+
+func (r *runtimeState) isFrozen() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.frozen
+}
+
+func WithConflictPolicy(policy RouteConflictPolicy) Option {
+	return func(m *RouteManager) {
+		if m == nil {
+			return
+		}
+		m.runtime.setPolicy(policy)
+	}
+}
+
 type Resolver interface {
 	Resolve(groupPath, route string, params Params, query Query) (string, error)
 }
@@ -76,8 +223,9 @@ func (e TemplateSubstitutionError) Error() string {
 }
 
 type RouteManager struct {
-	mu     sync.RWMutex
-	groups map[string]*Group
+	mu      sync.RWMutex
+	groups  map[string]*Group
+	runtime *runtimeState
 }
 
 type Config struct {
@@ -148,10 +296,8 @@ func (c Config) GetGroups() []GroupConfig {
 
 // NewRouteManagerFromConfig creates a new RouteManager from a Configurator and validates
 // the hierarchy during construction.
-func NewRouteManagerFromConfig(config Configurator) (*RouteManager, error) {
-	manager := &RouteManager{
-		groups: map[string]*Group{},
-	}
+func NewRouteManagerFromConfig(config Configurator, opts ...Option) (*RouteManager, error) {
+	manager := NewRouteManager(opts...)
 
 	if config == nil {
 		return manager, nil
@@ -166,17 +312,15 @@ func NewRouteManagerFromConfig(config Configurator) (*RouteManager, error) {
 	return manager, nil
 }
 
-func NewRouteManager(config ...*Config) *RouteManager {
+func NewRouteManager(opts ...Option) *RouteManager {
 	manager := &RouteManager{
-		groups: map[string]*Group{},
+		groups:  map[string]*Group{},
+		runtime: newRuntimeState(),
 	}
 
-	// If config is provided, process it
-	if len(config) > 0 && config[0] != nil {
-		for _, groupConfig := range config[0].Groups {
-			if _, err := manager.loadGroupFromConfig(groupConfig, nil); err != nil {
-				panic(err)
-			}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(manager)
 		}
 	}
 
@@ -191,23 +335,26 @@ func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Gro
 	routes := cloneRoutes(cfg.effectiveRoutes())
 
 	if parent == nil {
-		if _, exists := m.groups[cfg.Name]; exists {
-			return nil, fmt.Errorf("configuration error: duplicate root group %s", cfg.Name)
+		group, _, err := m.RegisterGroup(cfg.Name, cfg.BaseURL, routes)
+		if err != nil {
+			return nil, fmt.Errorf("configuration error: %w", err)
+		}
+		if cfg.Path != "" {
+			group.mu.Lock()
+			group.path = cfg.Path
+			group.mu.Unlock()
 		}
 
-		m.RegisterGroup(cfg.Name, cfg.BaseURL, routes)
-		group := m.Group(cfg.Name)
-		group.mu.Lock()
-		group.name = cfg.Name
-		group.path = cfg.Path
-		group.mu.Unlock()
-
 		if cfg.URLTemplate != "" {
-			group.SetURLTemplate(cfg.URLTemplate)
+			if err := group.SetURLTemplate(cfg.URLTemplate); err != nil {
+				return nil, fmt.Errorf("configuration error: %w", err)
+			}
 		}
 
 		for key, value := range cfg.TemplateVars {
-			group.SetTemplateVar(key, value)
+			if err := group.SetTemplateVar(key, value); err != nil {
+				return nil, fmt.Errorf("configuration error: %w", err)
+			}
 		}
 
 		for _, child := range cfg.Groups {
@@ -226,20 +373,21 @@ func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Gro
 		return nil, fmt.Errorf("configuration error: nested group %s cannot specify base_url", cfg.Name)
 	}
 
-	childGroup := parent.RegisterGroup(cfg.Name, cfg.Path, routes)
-	childGroup.mu.Lock()
-	childGroup.name = cfg.Name
-	if cfg.Path != "" {
-		childGroup.path = cfg.Path
+	childGroup, _, err := parent.RegisterGroup(cfg.Name, cfg.Path, routes)
+	if err != nil {
+		return nil, fmt.Errorf("configuration error: %w", err)
 	}
-	childGroup.mu.Unlock()
 
 	if cfg.URLTemplate != "" {
-		childGroup.SetURLTemplate(cfg.URLTemplate)
+		if err := childGroup.SetURLTemplate(cfg.URLTemplate); err != nil {
+			return nil, fmt.Errorf("configuration error: %w", err)
+		}
 	}
 
 	for key, value := range cfg.TemplateVars {
-		childGroup.SetTemplateVar(key, value)
+		if err := childGroup.SetTemplateVar(key, value); err != nil {
+			return nil, fmt.Errorf("configuration error: %w", err)
+		}
 	}
 
 	for _, child := range cfg.Groups {
@@ -254,26 +402,90 @@ func (m *RouteManager) loadGroupFromConfig(cfg GroupConfig, parent *Group) (*Gro
 	return childGroup, nil
 }
 
-func (m *RouteManager) RegisterGroup(name, baseURL string, routes map[string]string) *RouteManager {
+func compileRouteTemplate(tpl string) (func(any) (string, error), error) {
+	return ptre.Compile(tpl, &ptre.Options{
+		Encode: func(uri string, token any) string {
+			return url.PathEscape(uri)
+		},
+	})
+}
+
+func compileRouteTemplates(routes map[string]string) (map[string]func(any) (string, error), error) {
+	compiled := make(map[string]func(any) (string, error), len(routes))
+	for route, tpl := range routes {
+		fn, err := compileRouteTemplate(tpl)
+		if err != nil {
+			return nil, fmt.Errorf("compile route %q: %w", route, err)
+		}
+		compiled[route] = fn
+	}
+	return compiled, nil
+}
+
+func (r *RouteMutationResult) normalize() {
+	if r == nil {
+		return
+	}
+	slices.Sort(r.Added)
+	slices.Sort(r.Replaced)
+	slices.Sort(r.Skipped)
+	slices.SortFunc(r.Conflicts, func(a, b RouteConflictError) int {
+		if a.GroupFQN != b.GroupFQN {
+			return strings.Compare(a.GroupFQN, b.GroupFQN)
+		}
+		return strings.Compare(a.RouteKey, b.RouteKey)
+	})
+}
+
+func newManagedGroup(baseURL, name, path string, routes map[string]string, parent *Group, runtime *runtimeState) (*Group, error) {
+	compiled, err := compileRouteTemplates(routes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Group{
+		baseURL:        baseURL,
+		routes:         cloneRoutes(routes),
+		compiledRoutes: compiled,
+		name:           name,
+		path:           path,
+		parent:         parent,
+		children:       make(map[string]*Group),
+		urlTemplate:    "",
+		templateVars:   make(map[string]string),
+		runtime:        runtime,
+	}, nil
+}
+
+func (m *RouteManager) RegisterGroup(name, baseURL string, routes map[string]string) (*Group, RouteMutationResult, error) {
+	if strings.Contains(name, ".") {
+		return nil, RouteMutationResult{}, fmt.Errorf("register group: root group name %q cannot contain '.'", name)
+	}
+	if name == "" {
+		return nil, RouteMutationResult{}, fmt.Errorf("register group: group name is required")
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if group, exists := m.groups[name]; exists {
-		group.mu.Lock()
-		if group.name == "" {
-			group.name = name
-		}
-		group.mu.Unlock()
-		group.AddRoutes(routes)
-		return m
+	if m.runtime.isFrozen() {
+		return nil, RouteMutationResult{}, FrozenRouteManagerError{Operation: "register group", GroupFQN: name}
 	}
 
-	group := NewURIHelper(baseURL, routes)
-	group.mu.Lock()
-	group.name = name
-	group.mu.Unlock()
+	if group, exists := m.groups[name]; exists {
+		result, err := group.addRoutesLocked(routes)
+		return group, result, err
+	}
+
+	group, err := newManagedGroup(baseURL, name, "", routes, nil, m.runtime)
+	if err != nil {
+		return nil, RouteMutationResult{}, err
+	}
 	m.groups[name] = group
-	return m
+
+	result := RouteMutationResult{Added: slices.Sorted(maps.Keys(routes))}
+	result.normalize()
+	return group, result, nil
 }
 
 // MustValidate calls Validate and panics if validation errors are found.
@@ -348,6 +560,100 @@ func (m *RouteManager) DebugTree() string {
 	}
 
 	return builder.String()
+}
+
+func (m *RouteManager) Freeze() {
+	if m == nil {
+		return
+	}
+	m.runtime.freeze()
+}
+
+func (m *RouteManager) Frozen() bool {
+	if m == nil {
+		return false
+	}
+	return m.runtime.isFrozen()
+}
+
+func (m *RouteManager) Manifest() []RouteManifestEntry {
+	if m == nil {
+		return nil
+	}
+
+	m.mu.RLock()
+	rootNames := slices.Sorted(maps.Keys(m.groups))
+	roots := make([]*Group, 0, len(rootNames))
+	for _, name := range rootNames {
+		roots = append(roots, m.groups[name])
+	}
+	m.mu.RUnlock()
+
+	var manifest []RouteManifestEntry
+	for _, root := range roots {
+		appendManifestEntries(&manifest, root)
+	}
+
+	slices.SortFunc(manifest, func(a, b RouteManifestEntry) int {
+		if a.GroupFQN != b.GroupFQN {
+			return strings.Compare(a.GroupFQN, b.GroupFQN)
+		}
+		return strings.Compare(a.RouteKey, b.RouteKey)
+	})
+	return manifest
+}
+
+func DiffRouteManifest(before, after []RouteManifestEntry) RouteManifestDiff {
+	keyFor := func(entry RouteManifestEntry) string {
+		return entry.GroupFQN + "\x00" + entry.RouteKey
+	}
+
+	beforeMap := make(map[string]RouteManifestEntry, len(before))
+	afterMap := make(map[string]RouteManifestEntry, len(after))
+	for _, entry := range before {
+		beforeMap[keyFor(entry)] = entry
+	}
+	for _, entry := range after {
+		afterMap[keyFor(entry)] = entry
+	}
+
+	var diff RouteManifestDiff
+	for key, beforeEntry := range beforeMap {
+		afterEntry, ok := afterMap[key]
+		if !ok {
+			diff.Removed = append(diff.Removed, beforeEntry)
+			continue
+		}
+		if beforeEntry.RouteTemplate != afterEntry.RouteTemplate || beforeEntry.FullPathTemplate != afterEntry.FullPathTemplate {
+			diff.Changed = append(diff.Changed, RouteManifestChange{Before: beforeEntry, After: afterEntry})
+		}
+	}
+	for key, afterEntry := range afterMap {
+		if _, ok := beforeMap[key]; !ok {
+			diff.Added = append(diff.Added, afterEntry)
+		}
+	}
+
+	slices.SortFunc(diff.Added, func(a, b RouteManifestEntry) int {
+		if a.GroupFQN != b.GroupFQN {
+			return strings.Compare(a.GroupFQN, b.GroupFQN)
+		}
+		return strings.Compare(a.RouteKey, b.RouteKey)
+	})
+	slices.SortFunc(diff.Removed, func(a, b RouteManifestEntry) int {
+		if a.GroupFQN != b.GroupFQN {
+			return strings.Compare(a.GroupFQN, b.GroupFQN)
+		}
+		return strings.Compare(a.RouteKey, b.RouteKey)
+	})
+	slices.SortFunc(diff.Changed, func(a, b RouteManifestChange) int {
+		if a.Before.GroupFQN != b.Before.GroupFQN {
+			return strings.Compare(a.Before.GroupFQN, b.Before.GroupFQN)
+		}
+		return strings.Compare(a.Before.RouteKey, b.Before.RouteKey)
+	})
+
+	return diff
 }
 
 // GetGroup returns the group registered at the given path. The path may reference
@@ -462,6 +768,10 @@ func (m *RouteManager) EnsureGroup(path string) (*Group, error) {
 		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, parts[0])
 	}
 
+	if m.runtime.isFrozen() {
+		return nil, FrozenRouteManagerError{Operation: "ensure group", GroupFQN: path}
+	}
+
 	current := root
 	for idx, rawSegment := range parts[1:] {
 		name, segmentPath, err := parseEnsureSegment(rawSegment)
@@ -477,17 +787,17 @@ func (m *RouteManager) EnsureGroup(path string) (*Group, error) {
 			continue
 		}
 
-		current = current.registerChildLocked(name, segmentPath, map[string]string{})
-
-		current.mu.Lock()
-		if current.path == "" {
-			current.path = segmentPath
+		next, _, err := current.registerChildLocked(name, segmentPath, map[string]string{})
+		if err != nil {
+			return nil, fmt.Errorf("ensure group: %w", err)
 		}
-		if current.path == "" {
-			current.mu.Unlock()
+		current = next
+		current.mu.RLock()
+		currentPath := current.path
+		current.mu.RUnlock()
+		if currentPath == "" {
 			return nil, fmt.Errorf("ensure group: empty path for segment %q at position %d", name, idx+2)
 		}
-		current.mu.Unlock()
 	}
 
 	return current, nil
@@ -497,14 +807,14 @@ func (m *RouteManager) EnsureGroup(path string) (*Group, error) {
 // provided path. Routes in the map are compiled immediately and overwrite any
 // existing routes with the same name. The path supports dot-notation for nested
 // groups.
-func (m *RouteManager) AddRoutes(path string, routes map[string]string) (*Group, error) {
+func (m *RouteManager) AddRoutes(path string, routes map[string]string) (*Group, RouteMutationResult, error) {
 	group, err := m.GetGroup(path)
 	if err != nil {
-		return nil, err
+		return nil, RouteMutationResult{}, err
 	}
 
-	group.AddRoutes(routes)
-	return group, nil
+	result, err := group.AddRoutes(routes)
+	return group, result, err
 }
 
 // Group represents a collection of routes with optional templating capabilities.
@@ -536,22 +846,19 @@ type Group struct {
 	children       map[string]*Group // Map of child groups
 	urlTemplate    string            // URL template string (e.g., "{base_url}/{locale}{route_path}")
 	templateVars   map[string]string // Key-value pairs provided by this group
+	runtime        *runtimeState
 }
 
 func NewURIHelper(baseURL string, routes map[string]string) *Group {
-	compiled := make(map[string]func(any) (string, error), len(routes))
-
-	for route, tpl := range routes {
-		compiled[route] = ptre.MustCompile(tpl, &ptre.Options{
-			Encode: func(uri string, token any) string {
-				return url.PathEscape(uri)
-			},
-		})
+	runtime := newRuntimeState()
+	compiled, err := compileRouteTemplates(routes)
+	if err != nil {
+		panic(err)
 	}
 
 	return &Group{
 		baseURL:        baseURL,
-		routes:         routes,
+		routes:         cloneRoutes(routes),
 		compiledRoutes: compiled,
 		name:           "",
 		path:           "",
@@ -559,6 +866,7 @@ func NewURIHelper(baseURL string, routes map[string]string) *Group {
 		children:       make(map[string]*Group),
 		urlTemplate:    "",
 		templateVars:   make(map[string]string),
+		runtime:        runtime,
 	}
 }
 
@@ -773,20 +1081,125 @@ func (u *Group) FQN() string {
 	return parentName + "." + name
 }
 
+func (u *Group) fqnLocked() string {
+	if u == nil {
+		return ""
+	}
+
+	name := u.name
+	parent := u.parent
+	if parent == nil {
+		return name
+	}
+
+	parentName := parent.FQN()
+	if parentName == "" {
+		return name
+	}
+	if name == "" {
+		return parentName
+	}
+
+	return parentName + "." + name
+}
+
 // RegisterGroup creates and registers a new child group under the current group.
-// If a child group with the same name already exists, it merges the routes.
-func (u *Group) RegisterGroup(name, path string, routes map[string]string) *Group {
+func (u *Group) RegisterGroup(name, path string, routes map[string]string) (*Group, RouteMutationResult, error) {
 	return u.registerChildLocked(name, path, routes)
 }
 
-func (u *Group) registerChildLocked(name, path string, routes map[string]string) *Group {
+func (u *Group) canMutate(operation string) error {
+	if u == nil || u.runtime == nil || !u.runtime.isFrozen() {
+		return nil
+	}
+	return FrozenRouteManagerError{Operation: operation, GroupFQN: u.FQN()}
+}
+
+func (u *Group) addRoutesLocked(routes map[string]string) (RouteMutationResult, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	if existingGroup, exists := u.children[name]; exists {
-		if len(routes) > 0 {
-			existingGroup.AddRoutes(routes)
+	var result RouteMutationResult
+	if len(routes) == 0 {
+		return result, nil
+	}
+
+	policy := RouteConflictPolicyError
+	if u.runtime != nil {
+		policy = u.runtime.policy()
+	}
+	groupFQN := u.fqnLocked()
+
+	var conflicts []RouteConflictError
+	compiledIncoming := make(map[string]func(any) (string, error), len(routes))
+
+	for route, tpl := range routes {
+		if existing, exists := u.routes[route]; exists {
+			conflict := RouteConflictError{
+				GroupFQN:         groupFQN,
+				RouteKey:         route,
+				ExistingTemplate: existing,
+				IncomingTemplate: tpl,
+			}
+			switch policy {
+			case RouteConflictPolicySkip:
+				result.Skipped = append(result.Skipped, route)
+				result.Conflicts = append(result.Conflicts, conflict)
+				continue
+			case RouteConflictPolicyReplace:
+				fn, err := compileRouteTemplate(tpl)
+				if err != nil {
+					return RouteMutationResult{}, fmt.Errorf("compile route %q: %w", route, err)
+				}
+				compiledIncoming[route] = fn
+				result.Replaced = append(result.Replaced, route)
+				result.Conflicts = append(result.Conflicts, conflict)
+			default:
+				conflicts = append(conflicts, conflict)
+			}
+			continue
 		}
+
+		fn, err := compileRouteTemplate(tpl)
+		if err != nil {
+			return RouteMutationResult{}, fmt.Errorf("compile route %q: %w", route, err)
+		}
+		compiledIncoming[route] = fn
+		result.Added = append(result.Added, route)
+	}
+
+	if len(conflicts) > 0 {
+		slices.SortFunc(conflicts, func(a, b RouteConflictError) int {
+			if a.GroupFQN != b.GroupFQN {
+				return strings.Compare(a.GroupFQN, b.GroupFQN)
+			}
+			return strings.Compare(a.RouteKey, b.RouteKey)
+		})
+		result.Conflicts = append(result.Conflicts, conflicts...)
+		result.normalize()
+		return result, RouteConflictErrors{Conflicts: conflicts}
+	}
+
+	for route, fn := range compiledIncoming {
+		u.routes[route] = routes[route]
+		u.compiledRoutes[route] = fn
+	}
+
+	result.normalize()
+	return result, nil
+}
+
+func (u *Group) registerChildLocked(name, path string, routes map[string]string) (*Group, RouteMutationResult, error) {
+	if name == "" {
+		return nil, RouteMutationResult{}, fmt.Errorf("register group: group name is required")
+	}
+	if err := u.canMutate("register group"); err != nil {
+		return nil, RouteMutationResult{}, err
+	}
+
+	u.mu.Lock()
+	existingGroup, exists := u.children[name]
+	if exists {
 		if path != "" {
 			existingGroup.mu.Lock()
 			if existingGroup.path == "" {
@@ -794,32 +1207,22 @@ func (u *Group) registerChildLocked(name, path string, routes map[string]string)
 			}
 			existingGroup.mu.Unlock()
 		}
-		return existingGroup
+		u.mu.Unlock()
+		result, err := existingGroup.addRoutesLocked(routes)
+		return existingGroup, result, err
 	}
 
-	compiledRoutes := make(map[string]func(any) (string, error), len(routes))
-	for route, tpl := range routes {
-		compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
-			Encode: func(uri string, token any) string {
-				return url.PathEscape(uri)
-			},
-		})
+	childGroup, err := newManagedGroup("", name, path, routes, u, u.runtime)
+	if err != nil {
+		u.mu.Unlock()
+		return nil, RouteMutationResult{}, err
 	}
-
-	childGroup := &Group{
-		baseURL:        "", // Child groups don't have base URLs
-		routes:         routes,
-		compiledRoutes: compiledRoutes,
-		name:           name,
-		path:           path,
-		parent:         u,
-		children:       make(map[string]*Group),
-		urlTemplate:    "",
-		templateVars:   make(map[string]string),
-	}
-
 	u.children[name] = childGroup
-	return childGroup
+	u.mu.Unlock()
+
+	result := RouteMutationResult{Added: slices.Sorted(maps.Keys(routes))}
+	result.normalize()
+	return childGroup, result, nil
 }
 
 // Template Management Methods
@@ -839,10 +1242,14 @@ func (u *Group) registerChildLocked(name, path string, routes map[string]string)
 //   - "{base_url}/{env}/{service}{route_path}"
 //
 // To disable template rendering and revert to path concatenation, pass an empty string.
-func (u *Group) SetURLTemplate(template string) {
+func (u *Group) SetURLTemplate(template string) error {
+	if err := u.canMutate("set url template"); err != nil {
+		return err
+	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.urlTemplate = template
+	return nil
 }
 
 // SetTemplateVar sets a template variable that will be available for substitution in URL templates.
@@ -859,10 +1266,14 @@ func (u *Group) SetURLTemplate(template string) {
 //   - SetTemplateVar("version", "v2") for API versioning
 //   - SetTemplateVar("env", "staging") for environment-specific URLs
 //   - SetTemplateVar("region", "eu-west") for regional deployments
-func (u *Group) SetTemplateVar(key, value string) {
+func (u *Group) SetTemplateVar(key, value string) error {
+	if err := u.canMutate("set template var"); err != nil {
+		return err
+	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.templateVars[key] = value
+	return nil
 }
 
 // GetTemplateVar retrieves a template variable value from this group's local variables only.
@@ -905,20 +1316,11 @@ func (u *Group) GetTemplateVar(key string) (string, bool) {
 //	    "webhooks": "/webhooks/:event",
 //	    "status":   "/status",
 //	})
-func (u *Group) AddRoutes(routes map[string]string) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
-	// Add routes to the routes map
-	for route, tpl := range routes {
-		u.routes[route] = tpl
-		// Compile the route template
-		u.compiledRoutes[route] = ptre.MustCompile(tpl, &ptre.Options{
-			Encode: func(uri string, token any) string {
-				return url.PathEscape(uri)
-			},
-		})
+func (u *Group) AddRoutes(routes map[string]string) (RouteMutationResult, error) {
+	if err := u.canMutate("add routes"); err != nil {
+		return RouteMutationResult{}, err
 	}
+	return u.addRoutesLocked(routes)
 }
 
 // Template discovery methods
@@ -1164,6 +1566,42 @@ func detectMissingTemplateVars(template string, vars map[string]string) []string
 
 	slices.Sort(missing)
 	return missing
+}
+
+func appendManifestEntries(entries *[]RouteManifestEntry, group *Group) {
+	if group == nil {
+		return
+	}
+
+	group.mu.RLock()
+	groupName := group.FQN()
+	groupPath := group.getFullPath()
+	routesCopy := make(map[string]string, len(group.routes))
+	for key, value := range group.routes {
+		routesCopy[key] = value
+	}
+	childMap := make(map[string]*Group, len(group.children))
+	childNames := make([]string, 0, len(group.children))
+	for name, child := range group.children {
+		childMap[name] = child
+		childNames = append(childNames, name)
+	}
+	group.mu.RUnlock()
+
+	routeNames := slices.Sorted(maps.Keys(routesCopy))
+	for _, routeName := range routeNames {
+		*entries = append(*entries, RouteManifestEntry{
+			GroupFQN:         groupName,
+			RouteKey:         routeName,
+			RouteTemplate:    routesCopy[routeName],
+			FullPathTemplate: joinURLPath(groupPath, routesCopy[routeName]),
+		})
+	}
+
+	slices.Sort(childNames)
+	for _, childName := range childNames {
+		appendManifestEntries(entries, childMap[childName])
+	}
 }
 
 func appendGroupDebug(builder *strings.Builder, group *Group, depth int) {
