@@ -181,6 +181,18 @@ func TestRouteManagerManifestAndDiff(t *testing.T) {
 	}
 }
 
+func TestRouteManagerAdvertisesRoutingCapabilities(t *testing.T) {
+	manager := urlkit.NewRouteManager()
+	provider, ok := any(manager).(urlkit.RoutingCapabilityProvider)
+	if !ok {
+		t.Fatal("RouteManager does not implement RoutingCapabilityProvider")
+	}
+	capabilities := provider.RoutingCapabilities()
+	if !capabilities.StrictMutations || !capabilities.Manifest {
+		t.Fatalf("capabilities = %+v", capabilities)
+	}
+}
+
 func TestRouteManagerRejectsDottedRootRegistration(t *testing.T) {
 	rm := urlkit.NewRouteManager()
 	if _, _, err := rm.RegisterGroup("frontend.en", "https://example.com", map[string]string{
