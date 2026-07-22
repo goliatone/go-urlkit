@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/goliatone/go-urlkit/oauth2"
@@ -317,13 +318,7 @@ func prettyPrintUserInfo(userInfo map[string]any) {
 	fmt.Printf("     Additional fields: ")
 	additionalFields := []string{}
 	for key := range userInfo {
-		isCommon := false
-		for _, common := range commonFields {
-			if key == common {
-				isCommon = true
-				break
-			}
-		}
+		isCommon := slices.Contains(commonFields, key)
 		if !isCommon {
 			additionalFields = append(additionalFields, key)
 		}

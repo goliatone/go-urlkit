@@ -322,9 +322,7 @@ func cloneRoutes(routes map[string]string) map[string]string {
 	}
 
 	clone := make(map[string]string, len(routes))
-	for key, value := range routes {
-		clone[key] = value
-	}
+	maps.Copy(clone, routes)
 	return clone
 }
 
@@ -1668,9 +1666,7 @@ func appendManifestEntries(entries *[]RouteManifestEntry, group *Group) {
 	groupName := group.FQN()
 	groupPath := group.getFullPath()
 	routesCopy := make(map[string]string, len(group.routes))
-	for key, value := range group.routes {
-		routesCopy[key] = value
-	}
+	maps.Copy(routesCopy, group.routes)
 	childMap := make(map[string]*Group, len(group.children))
 	childNames := make([]string, 0, len(group.children))
 	for name, child := range group.children {
@@ -1706,9 +1702,7 @@ func appendGroupDebug(builder *strings.Builder, group *Group, depth int) {
 	path := group.path
 	template := group.urlTemplate
 	routesCopy := make(map[string]string, len(group.routes))
-	for key, value := range group.routes {
-		routesCopy[key] = value
-	}
+	maps.Copy(routesCopy, group.routes)
 	childMap := make(map[string]*Group, len(group.children))
 	childNames := make([]string, 0, len(group.children))
 	for name, child := range group.children {

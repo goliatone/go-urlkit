@@ -2,8 +2,10 @@ package urlkit
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -199,9 +201,9 @@ func headerBasedLocaleDetector(detectionContext *LocaleDetectionContext, support
 
 	// Parse Accept-Language header (simple implementation)
 	// Format: en-US,en;q=0.9,es;q=0.8
-	languages := strings.Split(detectionContext.AcceptLanguage, ",")
+	languages := strings.SplitSeq(detectionContext.AcceptLanguage, ",")
 
-	for _, lang := range languages {
+	for lang := range languages {
 		// Remove quality factor (;q=0.9)
 		langCode := strings.TrimSpace(strings.Split(lang, ";")[0])
 
@@ -280,24 +282,12 @@ func (c *LocaleConfig) isLocaleSupported(locale string, groupName string) bool {
 	// Check group-specific locales first
 	if groupName != "" {
 		if groupLocales, exists := c.LocaleGroups[groupName]; exists {
-			for _, supportedLocale := range groupLocales {
-				if supportedLocale == locale {
-					return true
-				}
-			}
-			// If group has specific locales defined, only those are supported for this group
-			return false
+			return slices.Contains(groupLocales, locale)
 		}
 	}
 
 	// Fall back to global supported locales
-	for _, supportedLocale := range c.SupportedLocales {
-		if supportedLocale == locale {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(c.SupportedLocales, locale)
 }
 
 // detectLocale detects locale from context with fallback support
@@ -443,13 +433,7 @@ func (c *LocaleConfig) ValidateLocaleConfig() error {
 	}
 
 	// Check if default locale is in supported locales
-	defaultSupported := false
-	for _, locale := range c.SupportedLocales {
-		if locale == c.DefaultLocale {
-			defaultSupported = true
-			break
-		}
-	}
+	defaultSupported := slices.Contains(c.SupportedLocales, c.DefaultLocale)
 	if !defaultSupported {
 		return fmt.Errorf("default locale '%s' must be in supported locales list", c.DefaultLocale)
 	}
@@ -461,13 +445,7 @@ func (c *LocaleConfig) ValidateLocaleConfig() error {
 		}
 		for _, groupLocale := range groupLocales {
 			// Check if group locale is in global supported locales
-			found := false
-			for _, supportedLocale := range c.SupportedLocales {
-				if groupLocale == supportedLocale {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(c.SupportedLocales, groupLocale)
 			if !found {
 				return fmt.Errorf("group '%s' locale '%s' is not in global supported locales", groupName, groupLocale)
 			}
@@ -896,9 +874,7 @@ func extractNavigationParams(value any) (map[string]Params, error) {
 		}
 
 		cloned := make(Params, len(rawParams))
-		for key, val := range rawParams {
-			cloned[key] = val
-		}
+		maps.Copy(cloned, rawParams)
 		result[route] = cloned
 	}
 
@@ -1000,7 +976,7 @@ func fromPongoValueReflection(iface any) any {
 	case reflect.Slice, reflect.Array:
 		length := rv.Len()
 		result := make([]any, length) // Pre-allocate with known size
-		for i := 0; i < length; i++ {
+		for i := range length {
 			result[i] = rv.Index(i).Interface()
 		}
 		return result

@@ -132,9 +132,7 @@ func cloneQuery(source Query) Query {
 	}
 
 	clone := make(Query, len(source))
-	for key, value := range source {
-		clone[key] = value
-	}
+	maps.Copy(clone, source)
 	return clone
 }
 
@@ -156,9 +154,7 @@ func cloneParamsMap(source Params) Params {
 	}
 
 	clone := make(Params, len(source))
-	for key, value := range source {
-		clone[key] = value
-	}
+	maps.Copy(clone, source)
 	return clone
 }
 
@@ -319,9 +315,9 @@ func parseEnsureSegment(segment string) (string, string, error) {
 	name := segment
 	customPath := ""
 
-	if idx := strings.Index(segment, ":"); idx != -1 {
-		name = segment[:idx]
-		customPath = segment[idx+1:]
+	if before, after, ok := strings.Cut(segment, ":"); ok {
+		name = before
+		customPath = after
 	}
 
 	name = strings.TrimSpace(name)
