@@ -114,6 +114,17 @@ type RouteManifestDiff struct {
 	Changed []RouteManifestChange
 }
 
+// RoutingCapabilities advertises package-native mutation and inspection
+// facilities without coupling integrations to their capability types.
+type RoutingCapabilities struct {
+	StrictMutations bool `json:"strict_mutations"`
+	Manifest        bool `json:"manifest"`
+}
+
+type RoutingCapabilityProvider interface {
+	RoutingCapabilities() RoutingCapabilities
+}
+
 type Option func(*RouteManager)
 
 type runtimeState struct {
@@ -257,6 +268,10 @@ type RouteManager struct {
 	mu      sync.RWMutex
 	groups  map[string]*Group
 	runtime *runtimeState
+}
+
+func (m *RouteManager) RoutingCapabilities() RoutingCapabilities {
+	return RoutingCapabilities{StrictMutations: true, Manifest: true}
 }
 
 type Config struct {
