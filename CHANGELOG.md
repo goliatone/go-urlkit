@@ -1,5 +1,23 @@
 # Changelog
 
+# [0.7.0](https://github.com/goliatone/go-urlkit/compare/v0.6.0...v0.7.0) - (2026-07-22)
+
+## <!-- 13 -->📦 Bumps
+
+- Bump version: v0.7.0 ([7eda6e7](https://github.com/goliatone/go-urlkit/commit/7eda6e7aefd33e2a4175623ff828d69b7e1fea30))  - (goliatone)
+
+## <!-- 16 -->➕ Add
+
+- Routing capabilities ([13c48b0](https://github.com/goliatone/go-urlkit/commit/13c48b06ce3d777e8291bd53a4cd79636491fe5c))  - (goliatone)
+
+## <!-- 3 -->📚 Documentation
+
+- Update changelog for v0.6.0 ([120b3d4](https://github.com/goliatone/go-urlkit/commit/120b3d4cd2ac0397a345335fa7145bc7fc691920))  - (goliatone)
+
+## <!-- 7 -->⚙️ Miscellaneous Tasks
+
+- Update test ([c4f8baa](https://github.com/goliatone/go-urlkit/commit/c4f8baaa25b2ea435fec0c55ce5017ca612176e8))  - (goliatone)
+
 # [0.6.0](https://github.com/goliatone/go-urlkit/compare/v0.5.0...v0.6.0) - (2026-03-11)
 
 ## <!-- 1 -->🐛 Bug Fixes
