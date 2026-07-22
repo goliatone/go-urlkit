@@ -52,12 +52,12 @@ func TestConcurrentTemplateRendering(t *testing.T) {
 	// Test url helper concurrency
 	t.Run("URLHelperConcurrency", func(t *testing.T) {
 		wg.Add(numGoroutines)
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(routineID int) {
 				defer wg.Done()
 				urlHelper := helpers["url"].(func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error))
 
-				for j := 0; j < operationsPerGoroutine; j++ {
+				for j := range operationsPerGoroutine {
 					userID := routineID*operationsPerGoroutine + j
 					params := map[string]any{"id": userID}
 
@@ -201,10 +201,10 @@ func TestConcurrentHelperAccess(t *testing.T) {
 			helper := helpers[test.helper].(func(...*pongo2.Value) (*pongo2.Value, *pongo2.Error))
 
 			wg.Add(numWorkers)
-			for i := 0; i < numWorkers; i++ {
+			for i := range numWorkers {
 				go func(workerID int) {
 					defer wg.Done()
-					for j := 0; j < operationsPerWorker; j++ {
+					for j := range operationsPerWorker {
 						if err := test.testFunc(helper, workerID, j); err != nil {
 							addError(fmt.Errorf("worker %d op %d: %v", workerID, j, err))
 						}
@@ -230,7 +230,7 @@ func TestTemplateHelpersWithPrepopulatedRoutes(t *testing.T) {
 	manager := NewRouteManager()
 
 	// Setup routes during initialization (single threaded phase)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		groupName := fmt.Sprintf("group_%d", i)
 		routes := map[string]string{
 			"route_1": fmt.Sprintf("/path_%d/1", i),
@@ -252,11 +252,11 @@ func TestTemplateHelpersWithPrepopulatedRoutes(t *testing.T) {
 	var errorMutex sync.Mutex
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(workerID int) {
 			defer wg.Done()
 
-			for j := 0; j < operationsPerWorker; j++ {
+			for j := range operationsPerWorker {
 				groupID := workerID % 20
 				groupName := fmt.Sprintf("group_%d", groupID)
 
@@ -330,11 +330,11 @@ func TestConcurrentRouteValidation(t *testing.T) {
 	}
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(workerID int) {
 			defer wg.Done()
 
-			for j := 0; j < checksPerWorker; j++ {
+			for j := range checksPerWorker {
 				testCase := testCases[j%len(testCases)]
 
 				result, err := hasRouteHelper(
@@ -373,10 +373,10 @@ func TestHighLoadTemplateHelpers(t *testing.T) {
 	manager := NewRouteManager()
 
 	// Create a substantial number of routes
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		groupName := fmt.Sprintf("group_%d", i)
 		routes := make(map[string]string)
-		for j := 0; j < 50; j++ {
+		for j := range 50 {
 			routes[fmt.Sprintf("route_%d", j)] = fmt.Sprintf("/path_%d/:id", j)
 		}
 		manager.RegisterGroup(groupName, fmt.Sprintf("https://group%d.example.com", i), routes)
@@ -396,11 +396,11 @@ func TestHighLoadTemplateHelpers(t *testing.T) {
 	var mutex sync.Mutex
 
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(workerID int) {
 			defer wg.Done()
 
-			for j := 0; j < operationsPerWorker; j++ {
+			for j := range operationsPerWorker {
 				groupID := workerID % 20
 				routeID := j % 50
 
@@ -467,11 +467,11 @@ func TestTemplateHelperMemoryUsage(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
 
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(workerID int) {
 			defer wg.Done()
 
-			for j := 0; j < numIterations; j++ {
+			for j := range numIterations {
 				// Create new parameter maps to test for leaks
 				params := map[string]any{
 					"id":    workerID*numIterations + j,
@@ -533,12 +533,12 @@ func TestBuilderConcurrentUsage(t *testing.T) {
 	var wg sync.WaitGroup
 	errCh := make(chan error, workers)
 
-	for worker := 0; worker < workers; worker++ {
+	for worker := range workers {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
 
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				id := workerID*iterations + i
 
 				// Build profile route using struct parameters

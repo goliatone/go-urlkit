@@ -317,7 +317,7 @@ func TestEncryptionPerformance(t *testing.T) {
 
 	// Measure encryption performance
 	start := time.Now()
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		_, err := EncryptState(key, state, data)
 		if err != nil {
 			t.Fatalf("encryption failed on iteration %d: %v", i, err)
@@ -333,7 +333,7 @@ func TestEncryptionPerformance(t *testing.T) {
 
 	// Measure decryption performance
 	start = time.Now()
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		_, _, err := DecryptState[string](key, encrypted)
 		if err != nil {
 			t.Fatalf("decryption failed on iteration %d: %v", i, err)

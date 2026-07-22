@@ -823,11 +823,11 @@ func TestThreadSafetyGenerate(t *testing.T) {
 	errors := make(chan error, numGoroutines*numGenerationsPerRoutine)
 	links := make(chan string, numGoroutines*numGenerationsPerRoutine)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(routineID int) {
 			defer wg.Done()
-			for j := 0; j < numGenerationsPerRoutine; j++ {
+			for j := range numGenerationsPerRoutine {
 				payload := Payload{
 					"user_id":    routineID,
 					"generation": j,

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"testing"
 
 	"golang.org/x/oauth2"
@@ -512,12 +513,7 @@ func containsString(s, substr string) bool {
 
 // containsScope checks if a scope exists in a slice of scopes
 func containsScope(scopes []string, scope string) bool {
-	for _, s := range scopes {
-		if s == scope {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(scopes, scope)
 }
 
 // BenchmarkGenericProviderScopes benchmarks the Scopes method

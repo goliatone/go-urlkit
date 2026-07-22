@@ -71,7 +71,7 @@ func TestMemoryStateStoreDuplicateStorage(t *testing.T) {
 	state := "duplicate-test"
 
 	// Store the same state multiple times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		result := store.Store(state)
 		if !result {
 			t.Errorf("Store(%q) iteration %d = false, want true", state, i)
@@ -123,10 +123,10 @@ func TestMemoryStateStoreConcurrency(t *testing.T) {
 
 	// Concurrently store states
 	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(routineID int) {
 			defer wg.Done()
-			for j := 0; j < statesPerGoroutine; j++ {
+			for j := range statesPerGoroutine {
 				state := fmt.Sprintf("state-%d-%d", routineID, j)
 				if !store.Store(state) {
 					t.Errorf("Failed to store state %s", state)
@@ -139,10 +139,10 @@ func TestMemoryStateStoreConcurrency(t *testing.T) {
 	// Concurrently validate states
 	wg.Add(numGoroutines)
 	validationResults := make([]bool, numGoroutines*statesPerGoroutine)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(routineID int) {
 			defer wg.Done()
-			for j := 0; j < statesPerGoroutine; j++ {
+			for j := range statesPerGoroutine {
 				state := fmt.Sprintf("state-%d-%d", routineID, j)
 				index := routineID*statesPerGoroutine + j
 				validationResults[index] = store.Validate(state)
@@ -161,10 +161,10 @@ func TestMemoryStateStoreConcurrency(t *testing.T) {
 	// Try validating again - all should fail
 	wg.Add(numGoroutines)
 	secondValidationResults := make([]bool, numGoroutines*statesPerGoroutine)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(routineID int) {
 			defer wg.Done()
-			for j := 0; j < statesPerGoroutine; j++ {
+			for j := range statesPerGoroutine {
 				state := fmt.Sprintf("state-%d-%d", routineID, j)
 				index := routineID*statesPerGoroutine + j
 				secondValidationResults[index] = store.Validate(state)
@@ -190,13 +190,13 @@ func TestMemoryStateStoreMixedOperations(t *testing.T) {
 
 	// Mix of store and validate operations
 	wg.Add(numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(workerID int) {
 			defer wg.Done()
 
 			// Each worker stores some states
 			states := make([]string, 10)
-			for j := 0; j < 10; j++ {
+			for j := range 10 {
 				state := fmt.Sprintf("worker-%d-state-%d", workerID, j)
 				states[j] = state
 				if !store.Store(state) {
@@ -276,7 +276,7 @@ func TestMemoryStateStoreRaceCondition(t *testing.T) {
 	// Writer goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			state := fmt.Sprintf("race-test-%d", i)
 			store.Store(state)
 		}
@@ -285,7 +285,7 @@ func TestMemoryStateStoreRaceCondition(t *testing.T) {
 	// Validator goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			state := fmt.Sprintf("race-test-%d", i)
 			// Don't care about result, just testing for races
 			store.Validate(state)
@@ -295,7 +295,7 @@ func TestMemoryStateStoreRaceCondition(t *testing.T) {
 	// Debug caller goroutine
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			store.Debug()
 			time.Sleep(time.Microsecond * 100)
 		}
@@ -316,7 +316,7 @@ func TestMemoryStateStoreMemoryUsage(t *testing.T) {
 	const numStates = 10000
 	states := make([]string, numStates)
 
-	for i := 0; i < numStates; i++ {
+	for i := range numStates {
 		state := fmt.Sprintf("memory-test-state-%d", i)
 		states[i] = state
 		if !store.Store(state) {

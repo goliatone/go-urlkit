@@ -464,7 +464,7 @@ func TestSecurityConcurrentAccess(t *testing.T) {
 
 	done := make(chan bool, numWorkers)
 
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		go func(workerID int) {
 			defer func() {
 				if r := recover(); r != nil {
@@ -473,7 +473,7 @@ func TestSecurityConcurrentAccess(t *testing.T) {
 				done <- true
 			}()
 
-			for j := 0; j < numOps; j++ {
+			for j := range numOps {
 				// Mix of valid and potentially problematic inputs
 				inputs := []string{
 					fmt.Sprintf("user_%d_%d", workerID, j),

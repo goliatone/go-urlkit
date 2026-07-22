@@ -2,6 +2,7 @@ package urlkit
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"testing"
 
@@ -2095,9 +2096,7 @@ func TestTemplateRenderingWithInjectedContext(t *testing.T) {
 						currentQuery := data[currentQueryKey].(map[string]string)
 						// Create modified query for next page
 						newQuery := make(map[string]string)
-						for k, v := range currentQuery {
-							newQuery[k] = v
-						}
+						maps.Copy(newQuery, currentQuery)
 						newQuery["page"] = "3"
 
 						result, err := urlFunc(

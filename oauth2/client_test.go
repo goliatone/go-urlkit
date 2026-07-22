@@ -641,10 +641,10 @@ func TestClientConcurrency(t *testing.T) {
 
 	// Concurrent GenerateURL operations
 	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(routineID int) {
 			defer wg.Done()
-			for j := 0; j < operationsPerGoroutine; j++ {
+			for j := range operationsPerGoroutine {
 				userData := TestUserData{
 					UserID:   fmt.Sprintf("user-%d-%d", routineID, j),
 					ReturnTo: fmt.Sprintf("/page-%d-%d", routineID, j),
