@@ -79,6 +79,7 @@ package securelink
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"time"
 
@@ -390,9 +391,7 @@ func (m *manager) Generate(route string, payloads ...Payload) (string, error) {
 	if len(payloads) > 0 {
 		combinedPayload = make(map[string]any)
 		for _, payload := range payloads {
-			for k, v := range payload {
-				combinedPayload[k] = v
-			}
+			maps.Copy(combinedPayload, payload)
 		}
 	}
 
